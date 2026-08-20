@@ -104,3 +104,10 @@ Traefik strips the prefix, so the container always sees clean `/` + `/api` paths
   (group object-ids; all empty until the groups are created). When the groups
   arrive: set the four env vars and switch the frontend from demo picks to
   `me.entraRoles`.
+- **Signed-in identity in the app**: the header avatar menu (Layout) shows the
+  portal user's name/email with "Skift demo-roller" and "Log ud" (portal's
+  `/api/auth/entra/logout`, `target="_top"` to escape the iframe; hidden when
+  auth is disabled). The barnepige view greets the signed-in user by real
+  first name but operates on a selectable **demo-profil** caregiver (header
+  select / mobile menu, localStorage `demoCaregiverId`) — the real
+  login↔caregiver mapping is future work (caregivers have no email column).

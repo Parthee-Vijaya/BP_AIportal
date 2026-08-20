@@ -84,3 +84,13 @@ export function padMaNumber(value) {
     const cleaned = String(value).replace(/\D/g, '').slice(0, 8);
     return cleaned.padStart(8, '0');
 }
+
+// Initialer til avatar-cirkler ("Bjørn Skalkam" -> "BS").
+export function initialsOf(name) {
+    if (!name) return '?';
+    const parts = name.replace(/\(.*\)/, '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    const first = parts[0][0] || '';
+    const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+    return (first + last).toUpperCase() || '?';
+}

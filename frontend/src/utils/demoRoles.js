@@ -8,6 +8,7 @@ export const ENTRA_ROLE_DEFS = Object.freeze([
         number: 1,
         label: 'Adgang til app',
         groupName: 'Digitaliseringsportalen Barnepige timeregistrering - adgang til app',
+        hint: 'lukker ind i appen',
         effect: 'Uden denne rolle ser man kun en "ingen adgang"-side.'
     },
     {
@@ -15,6 +16,7 @@ export const ENTRA_ROLE_DEFS = Object.freeze([
         number: 2,
         label: 'Brugere',
         groupName: 'Digitaliseringsportalen Barnepige timeregistrering - Brugere',
+        hint: 'barnepige-visning',
         effect: 'Barnepige-visningen: registrer timer og se egne registreringer.'
     },
     {
@@ -22,6 +24,7 @@ export const ENTRA_ROLE_DEFS = Object.freeze([
         number: 3,
         label: 'Administrator',
         groupName: 'Digitaliseringsportalen Barnepige timeregistrering - Administrator',
+        hint: 'administrator-visning',
         effect: 'Administrator-visningen: børn, barnepiger, bevillinger, helligdage, roller og rettigheder.'
     },
     {
@@ -29,6 +32,7 @@ export const ENTRA_ROLE_DEFS = Object.freeze([
         number: 4,
         label: 'Godkender',
         groupName: 'Digitaliseringsportalen Barnepige timeregistrering - Godkender',
+        hint: 'godkender-visning',
         effect: 'Godkender-visningen: gennemgå og godkend/afvis registrerede timer.'
     }
 ]);

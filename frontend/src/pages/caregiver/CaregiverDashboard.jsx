@@ -8,7 +8,7 @@ const ArrowIcon = () => (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
 );
 
-export default function CaregiverDashboard({ caregiverId = 1 }) {
+export default function CaregiverDashboard({ caregiverId = 1, userName }) {
     const [caregiver, setCaregiver] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -30,8 +30,8 @@ export default function CaregiverDashboard({ caregiverId = 1 }) {
         <div>
             <header className="page-heading flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                    <div className="eyebrow">Barnepige · MA {padMaNumber(caregiver.ma_number)}</div>
-                    <h1>Hej {caregiver.first_name}</h1>
+                    <div className="eyebrow">Barnepige · Demo-profil: {caregiver.first_name} {caregiver.last_name} · MA {padMaNumber(caregiver.ma_number)}</div>
+                    <h1>Hej {(userName || caregiver.first_name).split(' ')[0]}</h1>
                     <p>Her kan du registrere timer og følge dine bevillinger.</p>
                 </div>
                 <Link to="/barnepige/registrer" className="btn-primary px-5">Registrer timer</Link>

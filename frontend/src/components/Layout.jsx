@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { initialsOf } from '../utils/helpers';
 
 const KalundborgLogo = () => (
     <svg viewBox="0 0 80 60" className="h-10 w-auto" fill="currentColor" aria-hidden="true">
@@ -33,6 +34,7 @@ const Icons = {
     calendar: icon('M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'),
     settings: icon('M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM19.4 15a1.7 1.7 0 00.34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0015 19.4a1.7 1.7 0 00-1 .6l-.04.08h-4l-.04-.08A1.7 1.7 0 008 19.4a1.7 1.7 0 00-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 003.6 15a1.7 1.7 0 00-.6-1l-.08-.04v-4L3 9.92a1.7 1.7 0 00.6-1 1.7 1.7 0 00-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 008 4.6a1.7 1.7 0 001-.6l.04-.08h4l.04.08a1.7 1.7 0 001 .6 1.7 1.7 0 001.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0019.4 9a1.7 1.7 0 00.6 1l.08.04v4L20 14.08a1.7 1.7 0 00-.6.92z'),
     user: icon('M20 21a8 8 0 00-16 0m12-13a4 4 0 11-8 0 4 4 0 018 0z'),
+    logout: icon('M17 16l4-4m0 0l-4-4m4 4H9m4 7H7a2 2 0 01-2-2V7a2 2 0 012-2h6'),
     chevron: icon('M19 9l-7 7-7-7')
 };
 
@@ -51,11 +53,12 @@ const ADMIN_NAV = [
 const ROLE_LABELS = { approver: 'Godkender', administrator: 'Administrator', caregiver: 'Barnepige' };
 const HOME_PATHS = { approver: '/godkender/overblik', administrator: '/administrator/overblik', caregiver: '/barnepige' };
 
-export default function Layout({ children, userRole, onRoleChange, approvers = [], approver, onApproverChange, availableRoles = ['approver', 'administrator', 'caregiver'], me, onOpenRolePicker }) {
+export default function Layout({ children, userRole, onRoleChange, approvers = [], approver, onApproverChange, availableRoles = ['approver', 'administrator', 'caregiver'], me, onOpenRolePicker, caregivers = [], caregiver, onCaregiverChange }) {
     const location = useLocation();
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
     const [adminOpen, setAdminOpen] = useState(false);
+    const [userMenuOpen, setUserMenuOpen] = useState(false);
     const isStaff = userRole === 'approver' || userRole === 'administrator';
     const basePath = userRole === 'administrator' ? '/administrator' : '/godkender';
     const navItems = userRole === 'caregiver' ? CAREGIVER_NAV : [
@@ -71,6 +74,7 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
     useEffect(() => {
         setMenuOpen(false);
         setAdminOpen(false);
+        setUserMenuOpen(false);
     }, [location.pathname]);
 
     function changeRole(role) {
@@ -115,7 +119,7 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
                     <div className="ml-auto flex min-w-0 items-center gap-2 py-3">
                         <div className="hidden shrink-0 items-center gap-2 whitespace-nowrap text-sm font-medium 2xl:flex">
                             {Icons.user}
-                            <span>{ROLE_LABELS[userRole]}{isStaff && approver?.name ? ` · ${approver.name}` : ''}</span>
+                            <span>{ROLE_LABELS[userRole]}{isStaff && approver?.name ? ` · ${approver.name}` : ''}{userRole === 'caregiver' && caregiver ? ` · ${caregiver.first_name} ${caregiver.last_name}` : ''}</span>
                         </div>
                         {availableRoles.length > 1 && (
                             <>
@@ -127,16 +131,6 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
                                 </select>
                             </>
                         )}
-                        {onOpenRolePicker && (
-                            <button
-                                type="button"
-                                onClick={onOpenRolePicker}
-                                className="header-select shrink-0 cursor-pointer"
-                                title={me?.name ? `Logget ind som ${me.name} (${me.upn}) — skift demo-roller` : 'Skift demo-roller'}
-                            >
-                                Demo-roller
-                            </button>
-                        )}
                         {isStaff && approvers.length > 0 && (
                             <>
                                 <label className="sr-only" htmlFor="approver-switcher">Valgt profil</label>
@@ -144,6 +138,46 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
                                     {approvers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                                 </select>
                             </>
+                        )}
+                        {userRole === 'caregiver' && caregivers.length > 0 && (
+                            <>
+                                <label className="sr-only" htmlFor="caregiver-switcher">Demo-profil: hvilken barnepiges data vises</label>
+                                <select id="caregiver-switcher" value={caregiver?.id || ''} onChange={event => onCaregiverChange(event.target.value)} className="header-select hidden max-w-[190px] 2xl:block" title="Demo-profil: hvilken barnepiges data vises">
+                                    {caregivers.map(item => <option key={item.id} value={item.id}>{item.first_name} {item.last_name}</option>)}
+                                </select>
+                            </>
+                        )}
+                        {me !== undefined && (
+                            <div className="relative flex shrink-0 items-center">
+                                <button
+                                    type="button"
+                                    onClick={() => setUserMenuOpen(open => !open)}
+                                    aria-expanded={userMenuOpen}
+                                    aria-label="Brugermenu"
+                                    title={me?.name ? `Logget ind som ${me.name}` : 'Brugermenu'}
+                                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-xs font-bold text-white transition-colors hover:bg-white/30"
+                                >
+                                    {initialsOf(me?.name)}
+                                </button>
+                                {userMenuOpen && (
+                                    <div className="admin-menu absolute right-0 top-[calc(100%+8px)] z-50 min-w-64 border border-stone-200 bg-white p-2 text-slate-900 shadow-lg">
+                                        <div className="border-b border-stone-100 px-2.5 pb-2 pt-1">
+                                            <p className="truncate text-sm font-semibold">{me?.name || 'Ukendt bruger'}</p>
+                                            <p className="truncate text-xs text-slate-500">{me?.upn || ''}</p>
+                                        </div>
+                                        {onOpenRolePicker && (
+                                            <button type="button" onClick={() => { setUserMenuOpen(false); onOpenRolePicker(); }} className="admin-menu-link w-full text-left">
+                                                {Icons.settings}Skift demo-roller
+                                            </button>
+                                        )}
+                                        {me?.authEnabled && (
+                                            <a href="/api/auth/entra/logout" target="_top" className="admin-menu-link">
+                                                {Icons.logout}Log ud
+                                            </a>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         )}
                         <button type="button" className="header-icon-button xl:hidden" aria-expanded={menuOpen} aria-controls="mobile-menu" aria-label={menuOpen ? 'Luk menu' : 'Åbn menu'} onClick={() => setMenuOpen(open => !open)}>
                             {menuOpen ? Icons.close : Icons.menu}
@@ -161,14 +195,31 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
                                 </select>
                             </div>
                         )}
+                        {userRole === 'caregiver' && caregivers.length > 0 && (
+                            <div className="mb-3">
+                                <label htmlFor="mobile-caregiver-switcher" className="mb-1 block text-xs font-semibold text-white/75">Demo-profil (barnepige)</label>
+                                <select id="mobile-caregiver-switcher" value={caregiver?.id || ''} onChange={event => onCaregiverChange(event.target.value)} className="header-select w-full max-w-none">
+                                    {caregivers.map(item => <option key={item.id} value={item.id}>{item.first_name} {item.last_name}</option>)}
+                                </select>
+                            </div>
+                        )}
                         {[...navItems, ...(isStaff ? adminItems : [])].map(([path, label, navIcon]) => (
                             <Link key={path} to={path} className={`mobile-menu-link ${isActive(path) ? 'is-active' : ''}`}>{navIcon}{label}</Link>
                         ))}
+                        {me?.name && (
+                            <p className="mt-2 px-1 text-xs text-white/70">Logget ind som {me.name}{me.upn ? ` (${me.upn})` : ''}</p>
+                        )}
                         {onOpenRolePicker && (
                             <button type="button" onClick={onOpenRolePicker} className="mobile-menu-link w-full text-left">
                                 {Icons.user}
-                                <span>Skift demo-roller{me?.name ? ` · ${me.name}` : ''}</span>
+                                <span>Skift demo-roller</span>
                             </button>
+                        )}
+                        {me?.authEnabled && (
+                            <a href="/api/auth/entra/logout" target="_top" className="mobile-menu-link">
+                                {Icons.logout}
+                                <span>Log ud</span>
+                            </a>
                         )}
                     </nav>
                 )}

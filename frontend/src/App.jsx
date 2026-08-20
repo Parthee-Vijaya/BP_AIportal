@@ -14,7 +14,7 @@ import RegisterTime from './pages/caregiver/RegisterTime';
 import MyTimeEntries from './pages/caregiver/MyTimeEntries';
 import DemoRoleScreen from './components/DemoRoleScreen';
 import { NoAccessScreen, NoRolesScreen } from './components/AccessScreens';
-import { approversApi, meApi } from './utils/api';
+import { approversApi, caregiversApi, meApi } from './utils/api';
 import { hasPermission } from './utils/permissions';
 import { ALL_ROLE_KEYS, loadDemoRoles, saveDemoRoles, viewsForRoles } from './utils/demoRoles';
 
@@ -39,7 +39,10 @@ export default function App() {
     const [me, setMe] = useState(undefined);
     const [demoRoles, setDemoRoles] = useState(() => loadDemoRoles());
     const [rolePickerOpen, setRolePickerOpen] = useState(false);
-    const caregiverId = 1;
+    // Barnepige-visningen agerer som en valgt demo-barnepige (indtil den rigtige
+    // kobling mellem login og barnepige-stamdata findes).
+    const [caregivers, setCaregivers] = useState([]);
+    const [selectedCaregiverId, setSelectedCaregiverId] = useState(() => Number(localStorage.getItem('demoCaregiverId')) || null);
 
     async function loadApprovers() {
         const data = await approversApi.getAll();
@@ -48,6 +51,15 @@ export default function App() {
 
     useEffect(() => { loadApprovers().catch(console.error); }, []);
     useEffect(() => { meApi.get().then(setMe).catch(() => setMe(null)); }, []);
+    useEffect(() => { caregiversApi.getAll().then(setCaregivers).catch(console.error); }, []);
+
+    const caregiver = caregivers.find(item => item.id === selectedCaregiverId) || caregivers[0] || null;
+    const caregiverId = caregiver?.id ?? 1;
+
+    function changeCaregiver(id) {
+        setSelectedCaregiverId(Number(id));
+        localStorage.setItem('demoCaregiverId', String(id));
+    }
 
     useEffect(() => {
         const routeRole = roleFromPath(location.pathname);
@@ -117,6 +129,9 @@ export default function App() {
             availableRoles={availableViews}
             me={me}
             onOpenRolePicker={() => setRolePickerOpen(true)}
+            caregivers={caregivers}
+            caregiver={caregiver}
+            onCaregiverChange={changeCaregiver}
         >
             <Routes>
                 <Route path="/" element={<Navigate to={HOME_PATHS[userRole]} replace />} />
@@ -139,7 +154,7 @@ export default function App() {
                 <Route path="/administrator/helligdage" element={guarded('manage_holidays', <HolidaysPage />)} />
                 <Route path="/administrator/rettigheder" element={guarded('manage_permissions', <ApproversPage onProfilesChanged={loadApprovers} />)} />
 
-                <Route path="/barnepige" element={<CaregiverDashboard caregiverId={caregiverId} />} />
+                <Route path="/barnepige" element={<CaregiverDashboard caregiverId={caregiverId} userName={me?.name} />} />
                 <Route path="/barnepige/registrer" element={<RegisterTime caregiverId={caregiverId} />} />
                 <Route path="/barnepige/mine-timer" element={<MyTimeEntries caregiverId={caregiverId} />} />
 
