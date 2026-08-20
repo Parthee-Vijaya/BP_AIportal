@@ -88,7 +88,9 @@ function claimsToUser(claims) {
 export async function requirePortalUser(req, res, next) {
     if (!authEnabled) {
         req.portalUser = {
-            upn: 'dev@localhost',
+            // Punktum i domænet, så udvikler-identiteten består samme
+            // e-mail-validering som rigtige adresser.
+            upn: 'dev@localhost.test',
             name: 'Udvikling (login slået fra)',
             oid: null,
             groups: [],

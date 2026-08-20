@@ -73,7 +73,7 @@ export default function CaregiversPage({ readOnly = false }) {
     }
 
     function openCreateModal() {
-        setFormData({ first_name: '', last_name: '', ma_number: '', child_ids: [] });
+        setFormData({ first_name: '', last_name: '', ma_number: '', email: '', child_ids: [] });
         setMaError('');
         setChildSearch('');
         setEditModal({ open: true, caregiver: null });
@@ -84,6 +84,7 @@ export default function CaregiversPage({ readOnly = false }) {
             first_name: caregiver.first_name,
             last_name: caregiver.last_name,
             ma_number: padMaNumber(caregiver.ma_number),
+            email: caregiver.email || '',
             child_ids: caregiver.children?.map(c => c.id) || []
         });
         setMaError('');
@@ -188,6 +189,7 @@ export default function CaregiversPage({ readOnly = false }) {
                                 <tr key={caregiver.id} className="hover:bg-gray-50 transition-colors">
                                     <td data-label="Navn" className="px-4 py-3">
                                         <span className="font-medium text-sm text-gray-900">{caregiver.first_name} {caregiver.last_name}</span>
+                                        {caregiver.email && <span className="block text-xs text-gray-500">{caregiver.email}</span>}
                                     </td>
                                     <td data-label="MA-nummer" className="px-4 py-3">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium bg-gray-100 text-gray-600 border border-gray-200">
@@ -278,6 +280,19 @@ export default function CaregiversPage({ readOnly = false }) {
                                     className={`w-full rounded-lg px-3 py-2 text-sm font-mono border focus:ring-2 focus:ring-[#B54A32]/20 ${maError ? 'border-red-400' : 'border-gray-300'}`}
                                 />
                                 {maError && <p className="mt-1 text-xs text-red-600">{maError}</p>}
+                            </div>
+
+                            <div>
+                                <label htmlFor="caregiver-email" className="block text-xs font-semibold text-gray-700 mb-1">E-mail (login)</label>
+                                <input
+                                    id="caregiver-email"
+                                    type="email"
+                                    value={formData.email || ''}
+                                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                    placeholder="navn@kalundborg.dk"
+                                    className="glass-input w-full rounded-lg px-3 py-2 text-sm"
+                                />
+                                <p className="mt-1 text-xs text-gray-500">Den e-mail barnepigen logger ind med — kobler login til denne profil, når appen kører med rigtige data.</p>
                             </div>
 
                             <div>

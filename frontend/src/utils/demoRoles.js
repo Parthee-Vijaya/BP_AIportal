@@ -67,3 +67,22 @@ export function viewsForRoles(roleKeys) {
     if (roleKeys.includes('bruger')) views.push('caregiver');
     return views;
 }
+
+// Datakilde: "demo" (legepladsen med testdata og profil-vælgere) eller
+// "live" (rigtige data — tom start, du er den du er logget ind som).
+export const DATA_SOURCES = Object.freeze({ DEMO: 'demo', LIVE: 'live' });
+
+const DATA_SOURCE_KEY = 'bpDataSource';
+
+export function loadDataSource() {
+    return localStorage.getItem(DATA_SOURCE_KEY) === DATA_SOURCES.LIVE
+        ? DATA_SOURCES.LIVE
+        : DATA_SOURCES.DEMO;
+}
+
+export function saveDataSource(source) {
+    localStorage.setItem(
+        DATA_SOURCE_KEY,
+        source === DATA_SOURCES.LIVE ? DATA_SOURCES.LIVE : DATA_SOURCES.DEMO
+    );
+}

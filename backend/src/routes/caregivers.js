@@ -35,6 +35,24 @@ function findDuplicateMaNumber(maNumber, excludedId = null) {
     });
 }
 
+// E-mail kobler barnepigen til hendes login ("rigtige data"). Valgfri; unik.
+function normalizeEmail(value) {
+    const email = String(value ?? '').trim().toLowerCase();
+    if (!email) return null;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ValidationError('E-mail er ikke gyldig');
+    return email;
+}
+
+function assertEmailAvailable(email, excludedId = null) {
+    if (!email) return;
+    const existing = db.prepare(`
+        SELECT id FROM caregivers WHERE lower(email) = lower(?) AND deleted_at IS NULL
+    `).get(email);
+    if (existing && (excludedId == null || existing.id !== Number(excludedId))) {
+        throw new ValidationError('E-mailen bruges allerede af en anden barnepige');
+    }
+}
+
 router.get('/', (req, res) => {
     try {
         const caregivers = db.prepare(`
@@ -96,13 +114,15 @@ router.post('/', requirePermission(PERMISSIONS.MANAGE_CAREGIVERS), (req, res) =>
         const maNumber = normalizeMaNumber(req.body.ma_number);
         const duplicate = findDuplicateMaNumber(maNumber);
         if (duplicate) throw new ValidationError('MA-nummer findes allerede');
+        const email = normalizeEmail(req.body.email);
+        assertEmailAvailable(email);
         const childIds = normalizeIdArray(req.body.child_ids, 'Børn');
         assertActiveChildren(childIds);
 
         const caregiverId = db.transaction(() => {
             const result = db.prepare(`
-                INSERT INTO caregivers (first_name, last_name, ma_number) VALUES (?, ?, ?)
-            `).run(firstName, lastName, maNumber);
+                INSERT INTO caregivers (first_name, last_name, ma_number, email) VALUES (?, ?, ?, ?)
+            `).run(firstName, lastName, maNumber, email);
             const insert = db.prepare('INSERT INTO child_caregiver (child_id, caregiver_id) VALUES (?, ?)');
             for (const childId of childIds) insert.run(childId, result.lastInsertRowid);
             return result.lastInsertRowid;
@@ -128,6 +148,10 @@ router.put('/:id', requirePermission(PERMISSIONS.MANAGE_CAREGIVERS), (req, res) 
             : existing.ma_number;
         const duplicate = findDuplicateMaNumber(maNumber, req.params.id);
         if (duplicate) throw new ValidationError('MA-nummer bruges allerede af en anden barnepige');
+        const email = req.body.email !== undefined
+            ? normalizeEmail(req.body.email)
+            : existing.email;
+        assertEmailAvailable(email, req.params.id);
 
         const childIds = req.body.child_ids !== undefined
             ? normalizeIdArray(req.body.child_ids, 'Børn')
@@ -136,9 +160,9 @@ router.put('/:id', requirePermission(PERMISSIONS.MANAGE_CAREGIVERS), (req, res) 
 
         db.transaction(() => {
             db.prepare(`
-                UPDATE caregivers SET first_name = ?, last_name = ?, ma_number = ?,
+                UPDATE caregivers SET first_name = ?, last_name = ?, ma_number = ?, email = ?,
                     updated_at = CURRENT_TIMESTAMP WHERE id = ?
-            `).run(firstName, lastName, maNumber, req.params.id);
+            `).run(firstName, lastName, maNumber, email, req.params.id);
             if (childIds) {
                 db.prepare('DELETE FROM child_caregiver WHERE caregiver_id = ?').run(req.params.id);
                 const insert = db.prepare('INSERT INTO child_caregiver (child_id, caregiver_id) VALUES (?, ?)');

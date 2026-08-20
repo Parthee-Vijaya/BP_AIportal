@@ -1,12 +1,14 @@
 -- Barnepige Timeregistrering Database Schema
 -- SQLite database
 
--- Barnepiger (babysitters)
+-- Barnepiger (babysitters). E-mail kobler barnepigen til hendes login i
+-- "rigtige data"-tilstanden (valgfri; unik når sat).
 CREATE TABLE IF NOT EXISTS caregivers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
     ma_number TEXT UNIQUE NOT NULL,
+    email TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME

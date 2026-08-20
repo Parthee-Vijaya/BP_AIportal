@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ENTRA_ROLE_DEFS, viewsForRoles } from '../utils/demoRoles';
+import { DATA_SOURCES, ENTRA_ROLE_DEFS, viewsForRoles } from '../utils/demoRoles';
 import { initialsOf } from '../utils/helpers';
 
 // Midlertidig demo-skærm: indtil de fire AD/Entra-grupper findes, vælger man
@@ -67,8 +67,22 @@ function IdentityRow({ me }) {
     );
 }
 
-export default function DemoRoleScreen({ me, initialRoles, onContinue }) {
+const DATA_OPTIONS = [
+    {
+        value: DATA_SOURCES.DEMO,
+        label: 'Demodata',
+        description: 'Legeplads med testdata og profil-vælgere. Frit lege.'
+    },
+    {
+        value: DATA_SOURCES.LIVE,
+        label: 'Rigtige data',
+        description: 'Starter tomt. Du er den, du er logget ind som — første bruger bliver administrator.'
+    }
+];
+
+export default function DemoRoleScreen({ me, initialRoles, initialDataSource, onContinue }) {
     const [selected, setSelected] = useState(() => new Set(initialRoles));
+    const [dataSource, setDataSource] = useState(initialDataSource || DATA_SOURCES.DEMO);
 
     function toggle(key) {
         setSelected(current => {
@@ -91,6 +105,28 @@ export default function DemoRoleScreen({ me, initialRoles, onContinue }) {
 
                 <div className="mt-3">
                     <IdentityRow me={me} />
+                </div>
+
+                <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Data</p>
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                    {DATA_OPTIONS.map(option => (
+                        <label
+                            key={option.value}
+                            className={`flex cursor-pointer flex-col gap-0.5 rounded-lg border px-2.5 py-1.5 transition-colors ${dataSource === option.value ? 'border-kalundborg-600 bg-kalundborg-50' : 'border-stone-200 hover:border-stone-300'}`}
+                        >
+                            <span className="flex items-center gap-1.5">
+                                <input
+                                    type="radio"
+                                    name="data-source"
+                                    checked={dataSource === option.value}
+                                    onChange={() => setDataSource(option.value)}
+                                    className="h-3.5 w-3.5 accent-[#B54A32]"
+                                />
+                                <span className="text-sm font-medium text-slate-800">{option.label}</span>
+                            </span>
+                            <span className="text-[10px] leading-snug text-slate-400">{option.description}</span>
+                        </label>
+                    ))}
                 </div>
 
                 <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Test med roller</p>
@@ -116,7 +152,7 @@ export default function DemoRoleScreen({ me, initialRoles, onContinue }) {
 
                 <div className="mt-3 flex items-center justify-between gap-3 border-t border-stone-100 pt-3">
                     <p className="text-xs text-slate-500">{selectionSummary(roleKeys)}</p>
-                    <button type="button" onClick={() => onContinue(roleKeys)} className="btn-primary shrink-0 !px-3 !py-1.5 !text-sm">
+                    <button type="button" onClick={() => onContinue(roleKeys, dataSource)} className="btn-primary shrink-0 !px-3 !py-1.5 !text-sm">
                         Fortsæt
                     </button>
                 </div>

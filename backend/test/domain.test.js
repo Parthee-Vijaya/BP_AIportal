@@ -381,7 +381,9 @@ test('administrative API-handlinger håndhæver godkenderens rettigheder', async
     const missing = await fetch(`${baseUrl}/api/holidays`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload
     });
-    assert.equal(missing.status, 401);
+    // 403, ikke 401: manglende profil er et rettighedsproblem — 401 er
+    // reserveret til manglende portal-login (frontenden sender til login).
+    assert.equal(missing.status, 403);
 
     const forbidden = await fetch(`${baseUrl}/api/holidays`, {
         method: 'POST',
@@ -424,7 +426,7 @@ test('rapportdashboard filtrerer registreringer, viser kommentarer og leverer fo
     const headers = { 'X-Approver-Id': String(reportApproverId) };
 
     const missingPermission = await fetch(`${baseUrl}/api/reports?${query}`);
-    assert.equal(missingPermission.status, 401);
+    assert.equal(missingPermission.status, 403);
     const secondApproverResponse = await fetch(`${baseUrl}/api/reports?${query}`, {
         headers: { 'X-Approver-Id': String(holidayApproverId) }
     });

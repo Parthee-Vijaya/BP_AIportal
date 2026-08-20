@@ -53,7 +53,7 @@ const ADMIN_NAV = [
 const ROLE_LABELS = { approver: 'Godkender', administrator: 'Administrator', caregiver: 'Barnepige' };
 const HOME_PATHS = { approver: '/godkender/overblik', administrator: '/administrator/overblik', caregiver: '/barnepige' };
 
-export default function Layout({ children, userRole, onRoleChange, approvers = [], approver, onApproverChange, availableRoles = ['approver', 'administrator', 'caregiver'], me, onOpenRolePicker, caregivers = [], caregiver, onCaregiverChange }) {
+export default function Layout({ children, userRole, onRoleChange, approvers = [], approver, onApproverChange, availableRoles = ['approver', 'administrator', 'caregiver'], me, onOpenRolePicker, caregivers = [], caregiver, onCaregiverChange, dataSource }) {
     const location = useLocation();
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
@@ -146,6 +146,16 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
                                     {caregivers.map(item => <option key={item.id} value={item.id}>{item.first_name} {item.last_name}</option>)}
                                 </select>
                             </>
+                        )}
+                        {dataSource && (
+                            <button
+                                type="button"
+                                onClick={onOpenRolePicker}
+                                title="Skift roller og data"
+                                className={`hidden shrink-0 rounded-md px-2 py-1 text-[10px] font-black uppercase tracking-wider sm:block ${dataSource === 'live' ? 'bg-emerald-200 text-emerald-950' : 'bg-amber-300 text-amber-950'}`}
+                            >
+                                {dataSource === 'live' ? 'Rigtige data' : 'Demodata'}
+                            </button>
                         )}
                         {me !== undefined && (
                             <div className="relative flex shrink-0 items-center">

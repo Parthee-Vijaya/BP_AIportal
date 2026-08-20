@@ -1,4 +1,5 @@
 import db from '../db/database.js';
+import { currentDataSource, DATA_SOURCES } from '../db/dataSource.js';
 
 export const PERMISSIONS = Object.freeze({
     EXPORT_REPORTS: 'export_reports',
@@ -48,7 +49,21 @@ export function getApprover(id) {
     };
 }
 
+export function findApproverByEmail(email) {
+    if (!email) return null;
+    const row = db.prepare(`
+        SELECT id FROM approvers WHERE lower(email) = lower(?) AND active = 1
+    `).get(String(email));
+    return row ? getApprover(row.id) : null;
+}
+
 export function getRequestApprover(req) {
+    // Rigtige data: profilen følger den loggede bruger (portal-SSO) — et
+    // klientvalgt X-Approver-Id ignoreres. Demodata: profil-vælgeren i
+    // headeren sender fortsat id'et.
+    if (currentDataSource() === DATA_SOURCES.LIVE) {
+        return findApproverByEmail(req.portalUser?.upn);
+    }
     const rawId = req.get('X-Approver-Id') || req.query.approver_id;
     if (!/^\d+$/.test(String(rawId || ''))) return null;
     return getApprover(Number(rawId));
@@ -57,7 +72,14 @@ export function getRequestApprover(req) {
 export function requirePermission(permission) {
     return (req, res, next) => {
         const approver = getRequestApprover(req);
-        if (!approver) return res.status(401).json({ error: 'Vælg en aktiv godkender- eller administratorprofil' });
+        if (!approver) {
+            // 403, ikke 401: brugeren ER logget ind i portalen (401 sender
+            // browseren til login), men mangler en profil i appen.
+            const error = currentDataSource() === DATA_SOURCES.LIVE
+                ? 'Din bruger er ikke oprettet som godkender eller administrator'
+                : 'Vælg en aktiv godkender- eller administratorprofil';
+            return res.status(403).json({ error });
+        }
         if (!approver.permissions.includes(permission)) {
             return res.status(403).json({ error: 'Profilen har ikke rettighed til denne handling' });
         }

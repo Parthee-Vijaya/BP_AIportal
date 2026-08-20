@@ -1,3 +1,5 @@
+import { loadDataSource } from './demoRoles';
+
 // API'et bor under samme base som appen (fx /barnepige-app/api bag portalen).
 const API_BASE = `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`;
 
@@ -28,6 +30,7 @@ async function fetchApi(endpoint, options = {}) {
         ...options,
         headers: {
             'Content-Type': 'application/json',
+            'X-Data-Source': loadDataSource(),
             ...(approverId ? { 'X-Approver-Id': approverId } : {}),
             ...options.headers
         }
@@ -43,7 +46,10 @@ async function fetchApi(endpoint, options = {}) {
 async function downloadApi(endpoint) {
     const approverId = localStorage.getItem('demoApproverId');
     const response = await fetch(`${API_BASE}${endpoint}`, {
-        headers: approverId ? { 'X-Approver-Id': approverId } : {}
+        headers: {
+            'X-Data-Source': loadDataSource(),
+            ...(approverId ? { 'X-Approver-Id': approverId } : {})
+        }
     });
     if (!response.ok) {
         await handleErrorResponse(response, 'Kunne ikke hente filen');
@@ -163,15 +169,24 @@ export const reportsApi = {
     }
 };
 
-// Export API
+// Export API — bruges som direkte download-links, så datakilden sendes som
+// query-parameter i stedet for header.
 export const exportApi = {
     timeEntries: (params = {}) => {
         const approverId = localStorage.getItem('demoApproverId');
-        const queryString = new URLSearchParams({ ...params, ...(approverId ? { approver_id: approverId } : {}) }).toString();
-        return `${API_BASE}/export/time-entries${queryString ? `?${queryString}` : ''}`;
+        const queryString = new URLSearchParams({
+            ...params,
+            data_source: loadDataSource(),
+            ...(approverId ? { approver_id: approverId } : {})
+        }).toString();
+        return `${API_BASE}/export/time-entries?${queryString}`;
     },
     children: () => {
         const approverId = localStorage.getItem('demoApproverId');
-        return `${API_BASE}/export/children${approverId ? `?approver_id=${encodeURIComponent(approverId)}` : ''}`;
+        const queryString = new URLSearchParams({
+            data_source: loadDataSource(),
+            ...(approverId ? { approver_id: approverId } : {})
+        }).toString();
+        return `${API_BASE}/export/children?${queryString}`;
     }
 };

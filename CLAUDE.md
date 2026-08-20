@@ -107,7 +107,21 @@ Traefik strips the prefix, so the container always sees clean `/` + `/api` paths
 - **Signed-in identity in the app**: the header avatar menu (Layout) shows the
   portal user's name/email with "Skift demo-roller" and "Log ud" (portal's
   `/api/auth/entra/logout`, `target="_top"` to escape the iframe; hidden when
-  auth is disabled). The barnepige view greets the signed-in user by real
-  first name but operates on a selectable **demo-profil** caregiver (header
-  select / mobile menu, localStorage `demoCaregiverId`) — the real
-  login↔caregiver mapping is future work (caregivers have no email column).
+  auth is disabled).
+- **Two data modes** (chosen on the demo screen, localStorage `bpDataSource`,
+  sent as `X-Data-Source` header / `data_source` query on downloads):
+  - **demo** — the seeded playground (`database.sqlite`): profile pickers in
+    the header (godkender + barnepige demo-profil), `X-Approver-Id` trusted.
+  - **live** — "rigtige data" (`live.sqlite`, same volume, starts empty): you
+    ARE your login. The server maps `portalUser.upn` → `approvers.email` /
+    `caregivers.email` (case-insensitive); `X-Approver-Id` is ignored; no
+    pickers. The **first** user to open live mode is auto-created as
+    administrator (only while `approvers` is empty). Users without a matching
+    record get "not registered" screens (`AccessScreens.jsx`). Caregivers got
+    an `email` column (unique when set) + admin form field for this binding.
+  - Both DBs live in `/app/data` (the `barnepige_data` volume) and are
+    schema-migrated at startup; only demo is seeded. Routing happens per
+    request via AsyncLocalStorage + a Proxy in `db/database.js` — statements
+    must keep being prepared inside handlers, never at module top level.
+  - Missing profile on guarded routes returns **403** (401 is reserved for
+    "not signed in" and triggers the portal login redirect).

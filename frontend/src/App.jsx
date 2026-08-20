@@ -13,10 +13,10 @@ import CaregiverDashboard from './pages/caregiver/CaregiverDashboard';
 import RegisterTime from './pages/caregiver/RegisterTime';
 import MyTimeEntries from './pages/caregiver/MyTimeEntries';
 import DemoRoleScreen from './components/DemoRoleScreen';
-import { NoAccessScreen, NoRolesScreen } from './components/AccessScreens';
+import { NoAccessScreen, NoRolesScreen, NotRegisteredScreen } from './components/AccessScreens';
 import { approversApi, caregiversApi, meApi } from './utils/api';
 import { hasPermission } from './utils/permissions';
-import { ALL_ROLE_KEYS, loadDemoRoles, saveDemoRoles, viewsForRoles } from './utils/demoRoles';
+import { ALL_ROLE_KEYS, DATA_SOURCES, loadDataSource, loadDemoRoles, saveDataSource, saveDemoRoles, viewsForRoles } from './utils/demoRoles';
 
 function roleFromPath(pathname) {
     if (pathname.startsWith('/barnepige')) return 'caregiver';
@@ -39,6 +39,10 @@ export default function App() {
     const [me, setMe] = useState(undefined);
     const [demoRoles, setDemoRoles] = useState(() => loadDemoRoles());
     const [rolePickerOpen, setRolePickerOpen] = useState(false);
+    // Datakilde: "demo" (legeplads) eller "live" (rigtige data). Skift kræver
+    // fuld genindlæsning, så alle hentede data følger den nye kilde.
+    const [dataSource] = useState(() => loadDataSource());
+    const liveMode = dataSource === DATA_SOURCES.LIVE;
     // Barnepige-visningen agerer som en valgt demo-barnepige (indtil den rigtige
     // kobling mellem login og barnepige-stamdata findes).
     const [caregivers, setCaregivers] = useState([]);
@@ -53,8 +57,12 @@ export default function App() {
     useEffect(() => { meApi.get().then(setMe).catch(() => setMe(null)); }, []);
     useEffect(() => { caregiversApi.getAll().then(setCaregivers).catch(console.error); }, []);
 
-    const caregiver = caregivers.find(item => item.id === selectedCaregiverId) || caregivers[0] || null;
-    const caregiverId = caregiver?.id ?? 1;
+    // Rigtige data: du ER den barnepige, din login-e-mail matcher. Demodata:
+    // en valgbar demo-profil.
+    const caregiver = liveMode
+        ? (me?.caregiverProfile || null)
+        : (caregivers.find(item => item.id === selectedCaregiverId) || caregivers[0] || null);
+    const caregiverId = caregiver?.id ?? (liveMode ? null : 1);
 
     function changeCaregiver(id) {
         setSelectedCaregiverId(Number(id));
@@ -67,7 +75,7 @@ export default function App() {
     }, [location.pathname, userRole]);
 
     useEffect(() => {
-        if (userRole === 'caregiver' || approvers.length === 0) return;
+        if (liveMode || userRole === 'caregiver' || approvers.length === 0) return;
         const profileRole = userRole === 'administrator' ? 'administrator' : 'approver';
         const storageKey = userRole === 'administrator' ? 'demoAdministratorId' : 'demoGodkenderId';
         const savedId = Number(localStorage.getItem(storageKey));
@@ -84,8 +92,12 @@ export default function App() {
     }
 
     const profileRole = userRole === 'administrator' ? 'administrator' : 'approver';
-    const visibleApprovers = approvers.filter(item => item.role === profileRole);
-    const approver = visibleApprovers.find(item => item.id === approverId) || visibleApprovers[0] || null;
+    // Rigtige data: profilen er den loggede bruger (matchet på e-mail af
+    // serveren) — ingen profil-vælger. Demodata: vælg blandt demo-profiler.
+    const visibleApprovers = liveMode ? [] : approvers.filter(item => item.role === profileRole);
+    const approver = liveMode
+        ? (me?.approverProfile || null)
+        : (visibleApprovers.find(item => item.id === approverId) || visibleApprovers[0] || null);
     const can = permission => hasPermission(approver, permission);
     const guarded = (permission, component) => (
         <PermissionRoute allowed={can(permission)}>{component}</PermissionRoute>
@@ -101,8 +113,15 @@ export default function App() {
             <DemoRoleScreen
                 me={me}
                 initialRoles={demoRoles ?? ALL_ROLE_KEYS}
-                onContinue={roles => {
+                initialDataSource={dataSource}
+                onContinue={(roles, source) => {
                     saveDemoRoles(roles);
+                    saveDataSource(source);
+                    if (source !== dataSource) {
+                        // Ny datakilde: genindlæs, så alle data hentes forfra.
+                        window.location.assign(import.meta.env.BASE_URL);
+                        return;
+                    }
                     setDemoRoles(roles);
                     setRolePickerOpen(false);
                 }}
@@ -115,8 +134,22 @@ export default function App() {
     if (availableViews.length === 0) {
         return <NoRolesScreen onOpenRolePicker={() => setRolePickerOpen(true)} />;
     }
-    if (!availableViews.includes(roleFromPath(location.pathname))) {
+    const currentView = roleFromPath(location.pathname);
+    if (!availableViews.includes(currentView)) {
         return <Navigate to={HOME_PATHS[availableViews[0]]} replace />;
+    }
+    // Rigtige data: er brugeren overhovedet oprettet i appen til den valgte visning?
+    if (liveMode && me) {
+        const isStaffView = currentView === 'approver' || currentView === 'administrator';
+        if (isStaffView && !me.approverProfile) {
+            return <NotRegisteredScreen variant="staff" onOpenRolePicker={() => setRolePickerOpen(true)} />;
+        }
+        if (currentView === 'administrator' && me.approverProfile?.role !== 'administrator') {
+            return <NotRegisteredScreen variant="adminMismatch" onOpenRolePicker={() => setRolePickerOpen(true)} />;
+        }
+        if (currentView === 'caregiver' && !me.caregiverProfile) {
+            return <NotRegisteredScreen variant="caregiver" onOpenRolePicker={() => setRolePickerOpen(true)} />;
+        }
     }
 
     return (
@@ -129,9 +162,10 @@ export default function App() {
             availableRoles={availableViews}
             me={me}
             onOpenRolePicker={() => setRolePickerOpen(true)}
-            caregivers={caregivers}
+            caregivers={liveMode ? [] : caregivers}
             caregiver={caregiver}
             onCaregiverChange={changeCaregiver}
+            dataSource={dataSource}
         >
             <Routes>
                 <Route path="/" element={<Navigate to={HOME_PATHS[userRole]} replace />} />
@@ -154,7 +188,7 @@ export default function App() {
                 <Route path="/administrator/helligdage" element={guarded('manage_holidays', <HolidaysPage />)} />
                 <Route path="/administrator/rettigheder" element={guarded('manage_permissions', <ApproversPage onProfilesChanged={loadApprovers} />)} />
 
-                <Route path="/barnepige" element={<CaregiverDashboard caregiverId={caregiverId} userName={me?.name} />} />
+                <Route path="/barnepige" element={<CaregiverDashboard caregiverId={caregiverId} userName={me?.name} isDemoProfile={!liveMode} />} />
                 <Route path="/barnepige/registrer" element={<RegisterTime caregiverId={caregiverId} />} />
                 <Route path="/barnepige/mine-timer" element={<MyTimeEntries caregiverId={caregiverId} />} />
 
