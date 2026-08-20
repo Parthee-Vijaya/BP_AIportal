@@ -36,35 +36,37 @@ const Icons = {
     chevron: icon('M19 9l-7 7-7-7')
 };
 
-const NAV = {
-    approver: [
-        ['/godkender/overblik', 'Overblik', Icons.home],
-        ['/godkender/godkendelse', 'Godkendelse', Icons.check]
-    ],
-    caregiver: [
+const CAREGIVER_NAV = [
         ['/barnepige', 'Overblik', Icons.home],
         ['/barnepige/registrer', 'Registrer', Icons.check],
         ['/barnepige/mine-timer', 'Mine timer', Icons.calendar]
-    ]
-};
-
-const ADMIN_NAV = [
-    ['/godkender/rapporter', 'Rapportdashboard', Icons.list, 'export_reports'],
-    ['/godkender/boern', 'Børn og bevillinger', Icons.child, 'manage_children'],
-    ['/godkender/barnepiger', 'Barnepiger', Icons.users, 'manage_caregivers'],
-    ['/godkender/helligdage', 'Helligdage', Icons.calendar, 'manage_holidays'],
-    ['/godkender/rettigheder', 'Rettigheder', Icons.settings, 'manage_permissions']
 ];
 
-const ROLE_LABELS = { approver: 'Godkender', caregiver: 'Barnepige' };
+const ADMIN_NAV = [
+    ['barnepiger', 'Barnepiger', Icons.users, 'manage_caregivers'],
+    ['helligdage', 'Helligdage', Icons.calendar, 'manage_holidays'],
+    ['rettigheder', 'Roller og rettigheder', Icons.settings, 'manage_permissions']
+];
+
+const ROLE_LABELS = { approver: 'Godkender', administrator: 'Administrator', caregiver: 'Barnepige' };
+const HOME_PATHS = { approver: '/godkender/overblik', administrator: '/administrator/overblik', caregiver: '/barnepige' };
 
 export default function Layout({ children, userRole, onRoleChange, approvers = [], approver, onApproverChange }) {
     const location = useLocation();
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
     const [adminOpen, setAdminOpen] = useState(false);
-    const navItems = NAV[userRole] || NAV.approver;
-    const adminItems = ADMIN_NAV.filter(([, , , permission]) => approver?.permissions?.includes(permission));
+    const isStaff = userRole === 'approver' || userRole === 'administrator';
+    const basePath = userRole === 'administrator' ? '/administrator' : '/godkender';
+    const navItems = userRole === 'caregiver' ? CAREGIVER_NAV : [
+        [`${basePath}/overblik`, 'Overblik', Icons.home],
+        [`${basePath}/godkendelse`, 'Godkendelse', Icons.check],
+        [`${basePath}/boern`, 'Børn og bevillinger', Icons.child],
+        [`${basePath}/rapporter`, 'Rapporter', Icons.list]
+    ];
+    const adminItems = ADMIN_NAV
+        .filter(([, , , permission]) => approver?.permissions?.includes(permission))
+        .map(([path, label, navIcon, permission]) => [`${basePath}/${path}`, label, navIcon, permission]);
 
     useEffect(() => {
         setMenuOpen(false);
@@ -73,7 +75,7 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
 
     function changeRole(role) {
         onRoleChange(role);
-        navigate(role === 'caregiver' ? '/barnepige' : '/godkender/overblik');
+        navigate(HOME_PATHS[role]);
     }
 
     const isActive = path => location.pathname === path;
@@ -83,20 +85,20 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
             <a href="#main-content" className="skip-link">Spring til hovedindhold</a>
             <header className="brand-header sticky top-0 z-50 text-white">
                 <div className="mx-auto flex min-h-[72px] max-w-[1600px] items-stretch gap-5 px-4 sm:px-6 lg:px-8">
-                    <Link to={userRole === 'caregiver' ? '/barnepige' : '/godkender/overblik'} className="brand-lockup flex shrink-0 items-center gap-3 py-3" aria-label="Kalundborg Kommune, gå til overblik">
+                    <Link to={HOME_PATHS[userRole]} className="brand-lockup flex shrink-0 items-center gap-3 py-3" aria-label="Kalundborg Kommune, gå til overblik">
                         <KalundborgLogo />
                         <span className="text-[15px] font-bold leading-[1.05] tracking-wide sm:text-base">Kalundborg<br />Kommune</span>
                     </Link>
 
-                    <nav aria-label="Primær navigation" className="desktop-nav hidden items-stretch md:flex">
+                    <nav aria-label="Primær navigation" className="desktop-nav hidden items-stretch xl:flex">
                         {navItems.map(([path, label, navIcon]) => (
                             <Link key={path} to={path} aria-current={isActive(path) ? 'page' : undefined} className={`desktop-nav-link ${isActive(path) ? 'is-active' : ''}`}>
                                 {navIcon}<span>{label}</span>
                             </Link>
                         ))}
-                        {userRole === 'approver' && adminItems.length > 0 && (
+                        {isStaff && adminItems.length > 0 && (
                             <div className="relative flex">
-                                <button type="button" onClick={() => setAdminOpen(open => !open)} aria-expanded={adminOpen} className={`desktop-nav-link ${location.pathname.startsWith('/godkender/') && !navItems.some(([path]) => path === location.pathname) ? 'is-active' : ''}`}>
+                                <button type="button" onClick={() => setAdminOpen(open => !open)} aria-expanded={adminOpen} className={`desktop-nav-link ${location.pathname.startsWith(`${basePath}/`) && !navItems.some(([path]) => path === location.pathname) ? 'is-active' : ''}`}>
                                     {Icons.settings}<span>Administration</span>{Icons.chevron}
                                 </button>
                                 {adminOpen && (
@@ -113,38 +115,39 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
                     <div className="ml-auto flex min-w-0 items-center gap-2 py-3">
                         <div className="hidden shrink-0 items-center gap-2 whitespace-nowrap text-sm font-medium 2xl:flex">
                             {Icons.user}
-                            <span>{ROLE_LABELS[userRole]}{userRole === 'approver' && approver?.name ? ` · ${approver.name}` : ''}</span>
+                            <span>{ROLE_LABELS[userRole]}{isStaff && approver?.name ? ` · ${approver.name}` : ''}</span>
                         </div>
                         <label className="sr-only" htmlFor="role-switcher">Vis demo som</label>
-                        <select id="role-switcher" value={userRole} onChange={event => changeRole(event.target.value)} className="header-select max-w-[128px]">
+                        <select id="role-switcher" value={userRole} onChange={event => changeRole(event.target.value)} className="header-select max-w-[150px]">
                             <option value="approver">Godkender</option>
+                            <option value="administrator">Administrator</option>
                             <option value="caregiver">Barnepige</option>
                         </select>
-                        {userRole === 'approver' && approvers.length > 0 && (
+                        {isStaff && approvers.length > 0 && (
                             <>
-                                <label className="sr-only" htmlFor="approver-switcher">Valgt godkender</label>
-                                <select id="approver-switcher" value={approver?.id || ''} onChange={event => onApproverChange(event.target.value)} className="header-select hidden max-w-[190px] xl:block">
+                                <label className="sr-only" htmlFor="approver-switcher">Valgt profil</label>
+                                <select id="approver-switcher" value={approver?.id || ''} onChange={event => onApproverChange(event.target.value)} className="header-select hidden max-w-[190px] 2xl:block">
                                     {approvers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                                 </select>
                             </>
                         )}
-                        <button type="button" className="header-icon-button md:hidden" aria-expanded={menuOpen} aria-controls="mobile-menu" aria-label={menuOpen ? 'Luk menu' : 'Åbn menu'} onClick={() => setMenuOpen(open => !open)}>
+                        <button type="button" className="header-icon-button xl:hidden" aria-expanded={menuOpen} aria-controls="mobile-menu" aria-label={menuOpen ? 'Luk menu' : 'Åbn menu'} onClick={() => setMenuOpen(open => !open)}>
                             {menuOpen ? Icons.close : Icons.menu}
                         </button>
                     </div>
                 </div>
 
                 {menuOpen && (
-                    <nav id="mobile-menu" aria-label="Mobilmenu" className="mobile-menu border-t border-white/20 px-4 py-3 md:hidden">
-                        {userRole === 'approver' && approvers.length > 0 && (
+                    <nav id="mobile-menu" aria-label="Mobilmenu" className="mobile-menu border-t border-white/20 px-4 py-3 xl:hidden">
+                        {isStaff && approvers.length > 0 && (
                             <div className="mb-3">
-                                <label htmlFor="mobile-approver-switcher" className="mb-1 block text-xs font-semibold text-white/75">Aktiv godkender</label>
+                                <label htmlFor="mobile-approver-switcher" className="mb-1 block text-xs font-semibold text-white/75">Aktiv {ROLE_LABELS[userRole].toLowerCase()}</label>
                                 <select id="mobile-approver-switcher" value={approver?.id || ''} onChange={event => onApproverChange(event.target.value)} className="header-select w-full max-w-none">
                                     {approvers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                                 </select>
                             </div>
                         )}
-                        {[...navItems, ...(userRole === 'approver' ? adminItems : [])].map(([path, label, navIcon]) => (
+                        {[...navItems, ...(isStaff ? adminItems : [])].map(([path, label, navIcon]) => (
                             <Link key={path} to={path} className={`mobile-menu-link ${isActive(path) ? 'is-active' : ''}`}>{navIcon}{label}</Link>
                         ))}
                     </nav>

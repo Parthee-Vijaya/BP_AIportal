@@ -100,7 +100,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/extra-grants – Opret ekstrabevilling (gælder fra d.d. og frem)
-router.post('/', requirePermission(PERMISSIONS.MANAGE_CHILDREN), (req, res) => {
+router.post('/', requirePermission(PERMISSIONS.MANAGE_GRANTS), (req, res) => {
     try {
         const { child_id, hours, from_date, to_date, comment, grant_source } = req.body;
         if (!child_id || hours == null || !from_date || !to_date) {
@@ -130,7 +130,7 @@ router.post('/', requirePermission(PERMISSIONS.MANAGE_CHILDREN), (req, res) => {
 });
 
 // PUT /api/extra-grants/:id – Opdater ekstrabevilling (gælder fra d.d. og frem)
-router.put('/:id', requirePermission(PERMISSIONS.MANAGE_CHILDREN), (req, res) => {
+router.put('/:id', requirePermission(PERMISSIONS.MANAGE_GRANTS), (req, res) => {
     try {
         const { hours, from_date, to_date, comment } = req.body;
         const existing = db.prepare('SELECT * FROM extra_grants WHERE id = ?').get(req.params.id);
@@ -168,7 +168,7 @@ router.put('/:id', requirePermission(PERMISSIONS.MANAGE_CHILDREN), (req, res) =>
 });
 
 // DELETE /api/extra-grants/:id
-router.delete('/:id', requirePermission(PERMISSIONS.MANAGE_CHILDREN), (req, res) => {
+router.delete('/:id', requirePermission(PERMISSIONS.MANAGE_GRANTS), (req, res) => {
     try {
         const existing = db.prepare('SELECT id FROM extra_grants WHERE id = ?').get(req.params.id);
         if (!existing) return res.status(404).json({ error: 'Ekstrabevilling ikke fundet' });

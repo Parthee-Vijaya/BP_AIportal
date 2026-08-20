@@ -38,6 +38,17 @@ export function initializeDatabase() {
         db.exec(schema);
         ensureColumn('caregivers', 'deleted_at', 'DATETIME');
         ensureColumn('children', 'deleted_at', 'DATETIME');
+        const approverRoleAdded = ensureColumn('approvers', 'role', "TEXT NOT NULL DEFAULT 'approver'");
+        if (approverRoleAdded) {
+            // Den tidligere profil med rettighedsstyring svarer til den nye administratorrolle.
+            db.exec(`
+                UPDATE approvers SET role = 'administrator'
+                WHERE id IN (
+                    SELECT approver_id FROM approver_permissions
+                    WHERE permission = 'manage_permissions'
+                )
+            `);
+        }
         ensureColumn('time_entries', 'calculation_version', "TEXT NOT NULL DEFAULT 'legacy'");
         ensureColumn('extra_grants', 'granted_by', "TEXT NOT NULL DEFAULT 'Godkender'");
         const grantedAtAdded = ensureColumn('extra_grants', 'granted_at', 'DATETIME');
@@ -66,21 +77,21 @@ export function initializeDatabase() {
         `);
 
         const demoApprovers = [
-            ['Mette Sørensen', 'mette.sorensen@example.test'],
-            ['Jonas Nielsen', 'jonas.nielsen@example.test'],
-            ['Lene Hansen', 'lene.hansen@example.test']
+            ['Mette Sørensen', 'mette.sorensen@example.test', 'administrator'],
+            ['Jonas Nielsen', 'jonas.nielsen@example.test', 'approver'],
+            ['Lene Hansen', 'lene.hansen@example.test', 'approver']
         ];
         const insertApprover = db.prepare(`
-            INSERT OR IGNORE INTO approvers (name, email) VALUES (?, ?)
+            INSERT OR IGNORE INTO approvers (name, email, role) VALUES (?, ?, ?)
         `);
         for (const approver of demoApprovers) insertApprover.run(...approver);
 
         const permissionSets = {
             'mette.sorensen@example.test': [
                 'export_reports', 'manage_children', 'manage_caregivers',
-                'manage_holidays', 'manage_settings', 'manage_permissions'
+                'manage_holidays', 'manage_settings', 'manage_permissions', 'manage_grants'
             ],
-            'jonas.nielsen@example.test': ['export_reports'],
+            'jonas.nielsen@example.test': ['export_reports', 'manage_grants'],
             'lene.hansen@example.test': ['manage_holidays']
         };
         const findApprover = db.prepare('SELECT id FROM approvers WHERE email = ?');

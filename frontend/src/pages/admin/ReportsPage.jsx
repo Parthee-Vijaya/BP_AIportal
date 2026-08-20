@@ -61,7 +61,7 @@ function StatusSummary({ label, value, total, colorClass }) {
     );
 }
 
-export default function ReportsPage({ approver = null }) {
+export default function ReportsPage({ approver = null, roleLabel = 'Administration' }) {
     const [children, setChildren] = useState([]);
     const [caregivers, setCaregivers] = useState([]);
     const [draftFilters, setDraftFilters] = useState(EMPTY_FILTERS);
@@ -149,7 +149,7 @@ export default function ReportsPage({ approver = null }) {
         <div>
             <header className="page-heading !mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                    <div className="eyebrow">Administration</div>
+                    <div className="eyebrow">{roleLabel}</div>
                     <h1>Rapportdashboard</h1>
                     <p>Filtrér registreringer på barn, barnepige, status og en selvvalgt periode. Kommentarer følger altid med.</p>
                 </div>

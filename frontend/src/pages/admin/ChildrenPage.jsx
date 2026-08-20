@@ -223,11 +223,11 @@ function ExtraGrantPreview({ child, form }) {
     );
 }
 
-export default function ChildrenPage({ readOnly = false, approver = null }) {
+export default function ChildrenPage({ readOnly = false, canManageRecords = !readOnly, canManageGrants = !readOnly, approver = null, roleLabel = 'Administration' }) {
     const [children, setChildren] = useState([]);
     const [caregivers, setCaregivers] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [editModal, setEditModal] = useState({ open: false, child: null });
+    const [editModal, setEditModal] = useState({ open: false, child: null, mode: 'full' });
     const [formData, setFormData] = useState({});
     const [searchQuery, setSearchQuery] = useState('');
     const [grantFilter, setGrantFilter] = useState('all');
@@ -259,10 +259,10 @@ export default function ChildrenPage({ readOnly = false, approver = null }) {
             has_frame_grant: false, frame_hours: 0, caregiver_ids: []
         });
         setCaregiverSearch('');
-        setEditModal({ open: true, child: null });
+        setEditModal({ open: true, child: null, mode: 'full' });
     }
 
-    function openEditModal(child) {
+    function openEditModal(child, mode = 'full') {
         setFormData({
             first_name: child.first_name, last_name: child.last_name,
             birth_date: child.birth_date || '', grant_type: child.grant_type,
@@ -271,14 +271,15 @@ export default function ChildrenPage({ readOnly = false, approver = null }) {
             caregiver_ids: child.caregivers?.map(c => c.id) || []
         });
         setCaregiverSearch('');
-        setEditModal({ open: true, child });
+        setEditModal({ open: true, child, mode });
     }
 
     async function handleSave() {
         try {
-            if (editModal.child) { await childrenApi.update(editModal.child.id, formData); }
+            if (editModal.child && editModal.mode === 'grant') { await childrenApi.updateGrant(editModal.child.id, formData); }
+            else if (editModal.child) { await childrenApi.update(editModal.child.id, formData); }
             else { await childrenApi.create(formData); }
-            setEditModal({ open: false, child: null });
+            setEditModal({ open: false, child: null, mode: 'full' });
             loadData();
         } catch (error) { alert('Fejl ved gem: ' + error.message); }
     }
@@ -381,11 +382,11 @@ export default function ChildrenPage({ readOnly = false, approver = null }) {
             <div className="page-heading !mb-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <div className="eyebrow">Administration</div>
+                        <div className="eyebrow">{roleLabel}</div>
                         <h1>Børn og bevillinger</h1>
                         <p>Se tildelte, brugte og resterende timer – og administrér bevillinger.</p>
                     </div>
-                    {!readOnly && <button onClick={openCreateModal} className="btn-kalundborg mobile-full gap-1.5 px-4 py-2 text-sm font-semibold"><PlusIcon />Opret barn</button>}
+                    {canManageRecords && <button onClick={openCreateModal} className="btn-kalundborg mobile-full gap-1.5 px-4 py-2 text-sm font-semibold"><PlusIcon />Opret barn</button>}
                 </div>
             </div>
 
@@ -428,7 +429,7 @@ export default function ChildrenPage({ readOnly = false, approver = null }) {
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200">Ekstrabevilling og gyldighed</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200">Samlet i perioden</th>
                                 <th className="children-caregiver-column px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200">Tilknyttede barnepiger</th>
-                                {!readOnly && <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200">Handlinger</th>}
+                                {(canManageGrants || canManageRecords) && <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200">Handlinger</th>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -456,18 +457,18 @@ export default function ChildrenPage({ readOnly = false, approver = null }) {
                                     <td data-label="Barnepiger" className="children-caregiver-column px-4 py-3 text-sm text-gray-600">
                                         {child.caregivers?.length ? <div className="flex flex-wrap gap-1.5">{child.caregivers.map(c => <span key={c.id} className="caregiver-chip">{c.name}</span>)}</div> : <span className="text-gray-400 italic">Ingen tilknyttet</span>}
                                     </td>
-                                    {!readOnly && (
+                                    {(canManageGrants || canManageRecords) && (
                                         <td data-label="Handlinger" className="px-4 py-3 text-right">
                                             <div className="inline-flex items-center gap-1">
-                                                <button onClick={() => openExtraGrantModal(child)} className="approval-action-secondary whitespace-nowrap" aria-label={`Administrer ekstrabevilling for ${child.first_name} ${child.last_name}`}>
+                                                {canManageGrants && <button onClick={() => openExtraGrantModal(child)} className="approval-action-secondary whitespace-nowrap" aria-label={`Administrer ekstrabevilling for ${child.first_name} ${child.last_name}`}>
                                                     + Ekstra
-                                                </button>
-                                                <button onClick={() => openEditModal(child)} className="min-h-10 min-w-10 p-2 text-gray-500 hover:text-[#B54A32] hover:bg-gray-100 rounded-lg transition-all" aria-label={`Rediger ${child.first_name} ${child.last_name}`}>
+                                                </button>}
+                                                <button onClick={() => openEditModal(child, canManageRecords ? 'full' : 'grant')} className="min-h-10 min-w-10 p-2 text-gray-500 hover:text-[#B54A32] hover:bg-gray-100 rounded-lg transition-all" aria-label={`${canManageRecords ? 'Rediger barn' : 'Rediger bevilling for'} ${child.first_name} ${child.last_name}`}>
                                                     <EditIcon />
                                                 </button>
-                                                <button onClick={() => handleDelete(child.id)} className="min-h-10 min-w-10 p-2 text-gray-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" aria-label={`Arkivér ${child.first_name} ${child.last_name}`}>
+                                                {canManageRecords && <button onClick={() => handleDelete(child.id)} className="min-h-10 min-w-10 p-2 text-gray-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" aria-label={`Arkivér ${child.first_name} ${child.last_name}`}>
                                                     <TrashIcon />
-                                                </button>
+                                                </button>}
                                             </div>
                                         </td>
                                     )}
@@ -495,22 +496,23 @@ export default function ChildrenPage({ readOnly = false, approver = null }) {
 
             {/* Edit/Create Modal */}
             {editModal.open && (
-                <DialogShell onClose={() => setEditModal({ open: false, child: null })} labelledBy="child-dialog-title" maxWidth="max-w-lg">
+                <DialogShell onClose={() => setEditModal({ open: false, child: null, mode: 'full' })} labelledBy="child-dialog-title" maxWidth="max-w-lg">
                         <div className="flex items-center justify-between mb-5">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-gradient-to-br from-[#B54A32] to-[#9a3f2b] rounded-xl flex items-center justify-center text-white shadow-lg shadow-[#B54A32]/30">
                                     <UserIcon />
                                 </div>
                                 <h3 id="child-dialog-title" className="text-lg font-bold text-gray-900">
-                                    {editModal.child ? 'Rediger barn' : 'Opret barn'}
+                                    {editModal.mode === 'grant' ? 'Rediger grund- og rammebevilling' : editModal.child ? 'Rediger barn' : 'Opret barn'}
                                 </h3>
                             </div>
-                            <button type="button" aria-label="Luk dialog" onClick={() => setEditModal({ open: false, child: null })} className="min-h-11 min-w-11 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all">
+                            <button type="button" aria-label="Luk dialog" onClick={() => setEditModal({ open: false, child: null, mode: 'full' })} className="min-h-11 min-w-11 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all">
                                 <CloseIcon />
                             </button>
                         </div>
 
                         <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+                            {editModal.mode !== 'grant' && <>
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <div>
                                     <label htmlFor="child-first-name" className="block text-xs font-semibold text-gray-700 mb-1">Fornavn *</label>
@@ -550,6 +552,7 @@ export default function ChildrenPage({ readOnly = false, approver = null }) {
                                     </div>
                                 </div>
                             </div>
+                            </>}
 
                             {/* Bevilling */}
                             <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -626,7 +629,7 @@ export default function ChildrenPage({ readOnly = false, approver = null }) {
 
                         <div className="flex gap-3 mt-5 pt-4 border-t border-gray-200">
                             <button type="button" onClick={handleSave} className="btn-kalundborg flex-1 rounded-lg px-4 py-2.5 font-semibold text-sm">Gem</button>
-                            <button type="button" onClick={() => setEditModal({ open: false, child: null })} className="min-h-11 flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold text-sm transition-all">Annuller</button>
+                            <button type="button" onClick={() => setEditModal({ open: false, child: null, mode: 'full' })} className="min-h-11 flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold text-sm transition-all">Annuller</button>
                         </div>
                 </DialogShell>
             )}

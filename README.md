@@ -1,307 +1,263 @@
 # Barnepige Timeregistrering
 
-Webbaseret system til registrering og godkendelse af timer for barnepiger i Kalundborg Kommune.
+En webbaseret løsning til registrering, beregning, godkendelse og rapportering
+af timer i Kalundborg Kommunes barnepigeordning.
 
-> **Bemærk:** Alle navne, MA-numre, børn og timeregistreringer vist i screenshots og i databasen er **mockdata og testdata** genereret udelukkende til test- og demonstrationsformål. Ingen persondata indgår.
+Løsningen samler barnepigens registrering, godkenderens behandling og den
+administrative styring af børn, bevillinger, rapporter og helligdage i ét
+responsivt system.
 
-![Admin Dashboard](docs/screenshots/admin-dashboard.png)
+> **Projektstatus:** Løsningen er en fungerende prototype med demo-profiler.
+> Profilvælgeren erstatter midlertidigt login og må ikke betragtes som en
+> produktionsklar sikkerhedsgrænse.
 
-## Quick Start
+> **Testdata:** Alle navne, MA-numre, børn, kommentarer og registreringer i
+> screenshots og den medfølgende SQLite-database er fiktive testdata.
 
-Kræver Node.js 22.17.x (se `.nvmrc`).
+![Administratorens overblik](docs/screenshots/admin-dashboard.png)
 
-```bash
-# Installer dependencies
-npm ci
+## Hvad løsningen understøtter
 
-# Start både backend og frontend
-npm run dev
+Den centrale arbejdsgang er:
 
-# Eller start separat:
-npm run dev:backend   # Backend på http://localhost:3001
-npm run dev:frontend  # Frontend på http://localhost:5173
+1. En barnepige registrerer dato, tidsrum, barn, bevilling og en valgfri
+   kommentar.
+2. Systemet beregner grundtimer, tillæg og bevillingsforbrug automatisk.
+3. Registreringen sendes til godkendelse med status **Afventer godkendelse**.
+4. En godkender gennemgår beregning og bevilling og godkender eller afviser.
+5. Registreringer kan efterfølgende filtreres og eksporteres som en formateret
+   Excel-rapport.
 
-# Kør backendens domæne- og API-tests
-npm test
-```
+## Brugeroplevelser og rettigheder
 
-## Demo Data
+Prototypen har tre adskilte demo-roller: **Barnepige**, **Godkender** og
+**Administrator**. Rollen fastlægger kerneadgangen, mens en administrator kan
+give en godkender enkelte ekstra administrative rettigheder.
 
-Kør seed script for at oprette demo data:
+| Funktion | Barnepige | Godkender | Administrator |
+|---|:---:|:---:|:---:|
+| Registrere timer | Ja | – | – |
+| Se egne timer og status | Ja | – | – |
+| Se samlet dashboard | – | Ja | Ja |
+| Godkende og afvise timer | – | Ja | Ja |
+| Se rapportdashboard og hente Excel | – | Ja | Ja |
+| Redigere grund- og rammebevilling | – | Ja | Ja |
+| Tildele og administrere ekstrabevilling | – | Ja | Ja |
+| Administrere børns stamdata | – | Kan tildeles | Ja |
+| Administrere barnepiger | – | Kan tildeles | Ja |
+| Administrere helligdage | – | Kan tildeles | Ja |
+| Ændre beregningsindstillinger | – | Kan tildeles | Ja |
+| Administrere roller og rettigheder | – | – | Ja |
 
-```bash
-node backend/seed-demo.js      # Basis: 3 barnepiger, 4 børn
-node backend/seed-extended.js   # Udvidet: 10 barnepiger, 15 børn, 58 registreringer
-node backend/seed-large.js      # Stort datasæt til performance test
-```
+Demo-profilen **Mette Sørensen** er administrator. **Jonas Nielsen** og
+**Lene Hansen** er godkendere; Lene har desuden fået adgang til at rette
+helligdage som eksempel på en individuelt tildelt rettighed.
 
-## Features
+Den detaljerede rettighedsmodel findes i
+[`docs/RETTIGHEDER.md`](docs/RETTIGHEDER.md).
 
-### 3-rolle system
+![Godkendere og rettigheder](docs/screenshots/rettigheder.png)
 
-Systemet har tre demo-rollevisninger. Rolle-dropdownen er endnu ikke egentlig
-login eller adgangskontrol og må derfor ikke bruges som sikkerhedsgrænse:
+## Barnepigens arbejdsgang
 
-| Rolle | Rettigheder |
-|-------|-------------|
-| **Administrator** | Fuld adgang: administrer børn, barnepiger, bevillinger, godkend/afvis timer, eksporter CSV, lønregistrering |
-| **Godkender** | Godkend/afvis timeregistreringer, adgang til admin via tandhjulsknap |
-| **Barnepige** | Se tilknyttede børn, registrer timer, se egne registreringer og status |
+Barnepigen har tre enkle indgange:
 
-Rollevalg sker via dropdown i headeren.
+- **Overblik** viser tilknyttede børn, aktuelle bevillingsperioder,
+  bevillingsforbrug og resterende ekstratimer.
+- **Registrer** indeholder arbejdsrelation, valg af barn og bevilling,
+  dato/tid, kommentar og automatisk beregningskontrol.
+- **Mine timer** samler afventende, godkendte og afviste registreringer med
+  beregning, kommentarer og status.
 
-### Admin Dashboard
+![Barnepigens overblik](docs/screenshots/barnepige-dashboard.png)
 
-Overblik med opsummeringskort for afventende godkendelser, godkendt i dag, antal børn og barnepiger. Viser seneste afventende registreringer med direkte links.
+![Barnepigens egne timer](docs/screenshots/mine-timer.png)
 
-![Admin Dashboard](docs/screenshots/admin-dashboard.png)
+## Godkendelse af timer
 
-### Godkendelse af timer
+Godkendelsesvisningen samler alle registreringer i statusfanerne **Afventer**,
+**Godkendte** og **Afviste**.
 
-Komplet godkendelsesworkflow med tre tabs: Afventer, Godkendte og Afviste.
+Godkenderen kan blandt andet:
 
-![Godkendelse](docs/screenshots/godkendelse-afventer.png)
+- søge og filtrere ensartet på tværs af statusser;
+- filtrere efter barn, barnepige og selvvalgt datointerval;
+- se tidsrum, tillæg, kommentar, bevillingskilde og aktuel periode;
+- se tydelige advarsler ved bevillingsoverskridelser;
+- godkende eller afvise enkeltregistreringer;
+- massevælge og godkende registreringer uden bevillingsadvarsel;
+- skifte mellem kompakt og detaljeret visning.
 
-**Funktioner:**
-- **Detaljeret/Kompakt visning** — skift mellem kortvisning og tabelvisning
-- **Opsummeringskort** — afventende registreringer og antal der overskrider bevilling
-- **Tillægsopsummering** — total timer fordelt på Normal, Aften, Nat, Lørdag, Søn/Hellig
-- **Batch-godkendelse** — vælg flere registreringer og godkend samlet med "Vælg alle"
-- **Filtrering** — søg på navn/MA-nummer, filtrer pr. barn og barnepige
-- **Sortering** — barnepige (A-Å/Å-A), barn, dato (nyeste/ældste), timer
-- **Periode-indstilling** — konfigurerbar månedsinterval (f.eks. d. 1-31 eller d. 16-15) med historik
-- **Bevillingsstatus** — progressbar pr. registrering med farveindikator (grøn/gul/rød)
-- **Overskridelses-advarsel** — rød markering af rækker der overskrider bevilling
-- **Inline redigering** — rediger dato og tider direkte i tabellen
-- **Lønregistrering** — marker godkendte timer som lønregistreret
-- **CSV eksport** — eksporter alle registreringer til CSV-fil
-- **Afvisning med årsag** — popup modal til indtastning af afvisningsårsag
+Godkenderrollen har desuden fast adgang til rapportdashboardet samt til at
+redigere grund-, ramme- og ekstrabevillinger. Børnenes stamdata kan kun ændres
+af en administrator eller en godkender, der specifikt har fået den ekstra
+rettighed.
 
-### Børneadministration
+![Godkendelse af afventende timer](docs/screenshots/godkendelse-afventer.png)
 
-CRUD-operationer for børn med bevillingsopsætning.
+## Børn og bevillinger
 
-![Børn](docs/screenshots/boern.png)
+Bevillingsoversigten adskiller bevidst tre tal:
 
-**Funktioner:**
-- Søgefelt (navn)
-- Bevillingstype pr. barn (uge, måned, kvartal, halvår, år, specifikke ugedage)
-- Rammebevilling som en separat årlig pulje, der vælges eksplicit ved registrering
-- Ekstra bevillinger — opret, rediger og slet supplerende bevillinger pr. barn
-- Tilknytning af barnepiger til børn
-- Visning af forbrugt vs. bevilget timer
+1. **Grundbevilling** – barnets normale bevilling eller rammebevilling.
+2. **Ekstrabevilling** – supplerende timer med egen gyldighedsperiode,
+   tildelingsdato og status.
+3. **Samlet rådighed** – grundbevilling plus aktive ekstratimer i perioden.
 
-### Barnepige-administration
+Løsningen understøtter uge, måned, kvartal, halvår, år, specifikke ugedage og
+en selvstændig årlig rammebevilling. Bevillinger er knyttet til barnet og deles
+af de barnepiger, der er tilknyttet barnet.
 
-CRUD-operationer for barnepiger med MA-nummer validering.
+Afventende og godkendte registreringer tæller med i bevillingsforbruget, mens
+afviste registreringer ikke gør.
 
-![Barnepiger](docs/screenshots/barnepiger.png)
+![Børn, grundbevilling og ekstrabevilling](docs/screenshots/boern.png)
 
-**Funktioner:**
-- Søgefelt (navn/MA-nummer)
-- MA-nummer validering (præcis 8 cifre, zero-padded)
-- Oversigt over tilknyttede børn som farvede badges
+## Rapportdashboard og Excel
 
-### Barnepige Dashboard
+Rapportdashboardet kan filtrere registreringer efter:
 
-Barnepigen ser sine tilknyttede børn med bevillingsstatus og hurtige genveje.
+- barn;
+- barnepige;
+- status;
+- fra- og til-dato.
 
-![Barnepige Dashboard](docs/screenshots/barnepige-dashboard.png)
+Dashboardet viser registreringer, grundtimer, tillæg, statusfordeling og alle
+registrerede kommentarer. Det samme udsnit kan hentes som en formateret
+`.xlsx`-fil med oversigt og detaljer.
 
-**Funktioner:**
-- Kort pr. tilknyttet barn med bevillingstype og forbrug
-- Progress bar for bevillingsstatus med farveindikator
-- Advarselsindikator ved bevillingsoverskridelse
-- Periodevisning (f.eks. uge-interval eller måned-interval)
-- Direkte link til timeregistrering pr. barn
-- Hurtig oversigt: antal børn, registreringer, genveje til ny registrering og mine timer
+![Rapportdashboard](docs/screenshots/rapporter.png)
 
-### Registrer timer
+## Beregningsmotor
 
-Formular til timeregistrering med automatisk tillægsberegning.
+Arbejdstiden afrundes op til nærmeste kvarter og opdeles automatisk i:
 
-![Registrer Timer](docs/screenshots/registrer-timer.png)
+- normaltimer;
+- aftentillæg;
+- nattillæg;
+- lørdagstillæg;
+- søn- og helligdagstillæg.
 
-**Funktioner:**
-- Vælg barn fra dropdown (forudfyldt via direkte link fra dashboard)
-- Datovælger med blokering af fremtidige datoer (visuel advarsel)
-- Start/slut tid med kvarters-afrunding (12:07 → 12:15)
-- Live preview af beregnede tillæg før indsendelse
-- Valg mellem normal bevilling og rammebevilling
-- Advarsel ved bevillingsoverskridelse
-
-### Mine Registreringer
-
-Barnepigen kan følge status på indsendte timer.
-
-![Mine Timer](docs/screenshots/mine-timer.png)
-
-**Funktioner:**
-- Tabs: Afventer, Godkendt, Afvist
-- Tillægsfordeling pr. registrering (Normal, Aften, Nat, Lørdag, Søn/Hellig)
-- Advarsler ved bevillingsoverskridelse
-- Kommentarer og afvisningsårsager synlige
-
-### Helligdage
-
-Administration af helligdage med integration til Kalendarium.dk API.
-
-![Helligdage](docs/screenshots/helligdage.png)
-
-**Funktioner:**
-- Officielle danske helligdage hentet live fra Kalendarium.dk API
-- Bevægelige helligdage med faktiske datoer (f.eks. Påskedag → 5. april 2026)
-- Klassifikation: Helligdag, Kirkedag, Mærkedag med farvekodede badges
-- Årsnavigation — skift frit mellem år
-- "Næste helligdag" banner med nedtælling
-- Wikipedia-links til hver helligdag
-- Brugerdefinerede helligdage (CRUD) — tilføj egne helligdage med dato, navn, tidsrum og gentagelse
-- Dimmet visning af passerede datoer, fremhævning af dagens dato
-
-### Mobilvisning
-
-Responsivt design med dedikeret mobilvisning.
-
-![Mobil Godkendelse](docs/screenshots/mobil-godkendelse.png)
-
-**Funktioner:**
-- Desktop/Mobil toggle i header
-- Automatisk kompakt visning på mobile enheder
-- Tabeller konverteres til kompakt layout
-- Tilpassede filtre og navigation
-- Batch-godkendelse fungerer også på mobil
-
-## Tillægsregler
-
-Det fulde, versionsstyrede regelsæt og de åbne forretningsafklaringer findes i
+Beregningen håndterer blandt andet tidsrum over midnat, bevægelige helligdage,
+brugerdefinerede helligdage og periodeskift. Beregningsreglerne er
+versionsstyrede og dokumenteret i
 [`docs/BEREGNINGSREGLER.md`](docs/BEREGNINGSREGLER.md).
 
-Alle arbejdstimer registreres som grundtimer. Tillægstimer beregnes oven i
-grundtimerne og fordeles automatisk efter tidspunkt og ugedag:
+### Standardgrænser
 
-### Hverdage (mandag-fredag)
-| Tid | Kategori |
-|-----|----------|
-| 00:00-06:00 | Nattillæg |
-| 06:00-17:00 | Intet tillæg |
-| 17:00-23:00 | Aftentillæg |
-| 23:00-23:59 | Nattillæg |
+| Dag | Tidsrum | Kategori |
+|---|---|---|
+| Mandag–fredag | 00:00–06:00 | Nattillæg |
+| Mandag–fredag | 06:00–17:00 | Normaltid |
+| Mandag–fredag | 17:00–23:00 | Aftentillæg |
+| Mandag–fredag | 23:00–24:00 | Nattillæg |
+| Lørdag | 00:00–06:00 | Nattillæg |
+| Lørdag | 06:00–08:00 | Normaltid |
+| Lørdag | 08:00–24:00 | Lørdagstillæg |
+| Søn- og beregningshelligdage | Hele døgnet | Søn-/helligdagstillæg |
 
-### Lørdag
-| Tid | Kategori |
-|-----|----------|
-| 00:00-06:00 | Nattillæg |
-| 06:00-08:00 | Intet tillæg |
-| 08:00-23:59 | Lørdagstillæg |
+## Helligdage
 
-### Søn- og helligdage
-| Tid | Kategori |
-|-----|----------|
-| 00:00-23:59 | Søndags- og helligdagstillæg |
+Kalenderoversigten henter officielle danske helligdage fra Kalendarium.dk og
+har en lokal fallback. Godkendere med den relevante rettighed kan desuden
+oprette tidsafgrænsede eller tilbagevendende lokale helligdage.
 
-**Beregningshelligdage overruler andre tillæg!** Regelsættet indeholder faste og
-bevægelige datoer. Kalendarium.dk bruges til kalenderoversigten, mens selve
-lønberegningen bruger det versionsstyrede lokale regelsæt. Brugerdefinerede
-helligdage kan tilføjes via admin.
+Kalender-API'et bruges til oversigten, mens lønberegningen anvender det
+versionsstyrede lokale regelsæt og de lokale administrative tilføjelser.
 
-Timer rundes op til nærmeste kvarter. Tidsformat er decimalt (0,25 / 0,50 / 0,75 / 1,00).
+## Kom hurtigt i gang
 
-## Bevillingstyper
+### Krav
 
-| Type | Periode |
-|------|---------|
-| **Uge** | Mandag til søndag |
-| **Måned** | Konfigurerbar (f.eks. d. 1-31 eller d. 16-15) |
-| **Kvartal** | Q1-Q4 |
-| **Halvår** | H1 (jan-jun) / H2 (jul-dec) |
-| **År** | 1. jan til 31. dec |
-| **Specifikke ugedage** | Timer pr. valgt ugedag pr. uge |
-| **Rammebevilling** | Separat årlig pulje, der vælges ved registrering |
-| **Ekstra bevilling** | Supplerende bevilling med valgfri periode |
+- Node.js `22.17.x` – se [`.nvmrc`](.nvmrc)
+- npm 10 eller nyere
 
-Bevillinger er pr. barn, ikke pr. barnepige. Både afventende og godkendte registreringer tæller med i forbruget.
+### Installation og lokal opstart
 
-## Månedsinterval
+```bash
+npm ci
+npm run dev
+```
 
-Administratorer kan konfigurere månedsintervallet for bevillingsperioder:
+Tjenesterne starter på:
 
-- Standard: d. 1 til d. 31 (kalendermåned)
-- Alternativ: f.eks. d. 16 til d. 15 (forskudt måned)
-- Ændringer gælder fra dags dato — ingen retroaktive ændringer
-- Fuld historik over intervalændringer
+- Frontend: [http://localhost:5173](http://localhost:5173)
+- Backend/API: [http://localhost:3001](http://localhost:3001)
+- Health check: [http://localhost:3001/api/health](http://localhost:3001/api/health)
 
-## Tech Stack
+### Nyttige kommandoer
 
-- **Frontend**: React 19 + Vite + Tailwind CSS + React Router v7
-- **Backend**: Node.js + Express
-- **Database**: SQLite (better-sqlite3)
-- **Styling**: Kalundborg Kommune branding (#B54A32)
-- **Deployment**: Render.com konfiguration med health check og persistent SQLite-disk
+| Kommando | Formål |
+|---|---|
+| `npm run dev` | Start frontend og backend samtidigt |
+| `npm run dev:frontend` | Start kun Vite-frontenden |
+| `npm run dev:backend` | Start kun Express-API'et |
+| `npm run build` | Opret produktionsbuild af frontenden |
+| `npm test` | Kør domæne- og API-tests |
+| `npm run recalculate:time-entries` | Genberegn gemte registreringer efter regelsættet |
 
-## API Endpoints
+## Demo- og testdata
 
-### Børn
-| Metode | Endpoint | Beskrivelse |
-|--------|----------|-------------|
-| `GET` | `/api/children` | Alle børn med tilknyttede barnepiger |
-| `GET` | `/api/children/:id` | Barn med barnepiger og bevillingsstatus |
-| `POST` | `/api/children` | Opret barn |
-| `PUT` | `/api/children/:id` | Opdater barn |
-| `DELETE` | `/api/children/:id` | Slet barn |
+Repositoryets SQLite-database indeholder det datasæt, som screenshots er taget
+med. Databasen ligger i `backend/src/db/database.sqlite`.
 
-### Barnepiger
-| Metode | Endpoint | Beskrivelse |
-|--------|----------|-------------|
-| `GET` | `/api/caregivers` | Alle barnepiger med tilknyttede børn |
-| `GET` | `/api/caregivers/:id` | Barnepige med tilknyttede børn |
-| `POST` | `/api/caregivers` | Opret barnepige |
-| `PUT` | `/api/caregivers/:id` | Opdater barnepige |
-| `DELETE` | `/api/caregivers/:id` | Slet barnepige |
+Seed-scripts kan bruges til at oprette alternative datasæt:
 
-### Timeregistreringer
-| Metode | Endpoint | Beskrivelse |
-|--------|----------|-------------|
-| `GET` | `/api/time-entries` | Registreringer (filtre: status, child_id, caregiver_id, datointerval) |
-| `GET` | `/api/time-entries/:id` | Enkelt registrering |
-| `POST` | `/api/time-entries` | Opret registrering med tillægsberegning |
-| `POST` | `/api/time-entries/preview` | Preview tillægsberegning uden oprettelse |
-| `PUT` | `/api/time-entries/:id/approve` | Godkend registrering |
-| `PUT` | `/api/time-entries/:id/reject` | Afvis registrering (kræver årsag) |
-| `PUT` | `/api/time-entries/:id/payroll` | Marker som lønregistreret |
-| `POST` | `/api/time-entries/batch-approve` | Batch-godkend flere registreringer |
+```bash
+node backend/seed-demo.js       # Mindre demonstrationsdatasæt
+node backend/seed-extended.js   # Udvidet datasæt med flere statusser
+node backend/seed-large.js      # Større datasæt til belastningstest
+```
 
-### Ekstra bevillinger
-| Metode | Endpoint | Beskrivelse |
-|--------|----------|-------------|
-| `GET` | `/api/extra-grants` | Alle ekstra bevillinger (valgfrit: `?child_id=`) |
-| `GET` | `/api/extra-grants/:id` | Enkelt ekstra bevilling |
-| `POST` | `/api/extra-grants` | Opret ekstra bevilling |
-| `PUT` | `/api/extra-grants/:id` | Opdater ekstra bevilling |
-| `DELETE` | `/api/extra-grants/:id` | Slet ekstra bevilling |
+Tag en kopi af databasen først, hvis eksisterende lokale testdata skal
+bevares.
 
-### Helligdage
-| Metode | Endpoint | Beskrivelse |
-|--------|----------|-------------|
-| `GET` | `/api/holidays` | Alle brugerdefinerede helligdage |
-| `GET` | `/api/holidays/kalendarium/:year` | Officielle helligdage fra Kalendarium.dk (cached) |
-| `POST` | `/api/holidays` | Opret brugerdefineret helligdag |
-| `PUT` | `/api/holidays/:id` | Opdater helligdag |
-| `DELETE` | `/api/holidays/:id` | Slet helligdag |
+## Teknologi og struktur
 
-### Eksport
-| Metode | Endpoint | Beskrivelse |
-|--------|----------|-------------|
-| `GET` | `/api/export/time-entries` | CSV/JSON eksport (filtre: status, barn, barnepige, dato, format) |
-| `GET` | `/api/export/children` | CSV/JSON eksport af børn |
+| Lag | Teknologi |
+|---|---|
+| Frontend | React 19, Vite, React Router og Tailwind CSS |
+| Backend | Node.js og Express |
+| Database | SQLite via `better-sqlite3` |
+| Excel | ExcelJS |
+| Test | Node.js' indbyggede test runner |
+| Design | Responsivt Kalundborg-inspireret tema med kommunens røde profilfarve |
 
-### Indstillinger
-| Metode | Endpoint | Beskrivelse |
-|--------|----------|-------------|
-| `GET` | `/api/settings/month-interval` | Nuværende månedsinterval |
-| `GET` | `/api/settings/month-interval/history` | Historik over intervalændringer |
-| `PUT` | `/api/settings/month-interval` | Opdater månedsinterval (fra dags dato) |
+```text
+BP3/
+├── backend/
+│   ├── src/routes/       # API-ruter
+│   ├── src/services/     # Beregning, bevilling, rapporter og rettigheder
+│   ├── src/db/           # Schema og SQLite-database
+│   └── test/             # Domæne- og API-tests
+├── frontend/
+│   └── src/
+│       ├── components/   # Fælles UI og rettighedsvagter
+│       └── pages/        # Godkender- og barnepigevisninger
+├── docs/                 # Regler, rettigheder og screenshots
+└── render.yaml           # Deploymentkonfiguration
+```
 
-### Sundhedstjek
-| Metode | Endpoint | Beskrivelse |
-|--------|----------|-------------|
-| `GET` | `/api/health` | API sundhedstjek |
+## Centrale API-områder
+
+- `/api/time-entries` – registrering, preview, godkendelse, afvisning og audit.
+- `/api/children` – børn, relationer, bevillingsstatus og afgrænset redigering af bevillinger.
+- `/api/extra-grants` – tidsafgrænsede ekstrabevillinger.
+- `/api/caregivers` – barnepiger og arbejdsrelationer.
+- `/api/reports` – filtrerede rapportdata og Excel-download.
+- `/api/approvers` – godkender- og administratorprofiler, roller og rettigheder.
+- `/api/holidays` – officielle og lokalt administrerede helligdage.
+- `/api/settings` – beregningsindstillinger og historik.
+
+## Kvalitet og kendte afgrænsninger
+
+- Beregningsmotoren og de centrale API-flows er dækket af automatiske tests.
+- Administrative API-handlinger kontrollerer den valgte profils rolle og
+  rettigheder.
+- UI'et er responsivt og har semantiske labels til centrale formularer og
+  tabeller.
+- Login og servervaliderede sessioner skal implementeres, før løsningen kan
+  betragtes som produktionsklar. Den nuværende rolle- og profilvælger er kun
+  beregnet til demo og lokal afprøvning.
+- Persondata, adgangslogning, backup, retention og driftssetup skal afklares før
+  anvendelse med virkelige borgere og medarbejdere.

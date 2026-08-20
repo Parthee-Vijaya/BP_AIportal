@@ -16,11 +16,14 @@ import { approversApi } from './utils/api';
 import { hasPermission } from './utils/permissions';
 
 function roleFromPath(pathname) {
-    return pathname.startsWith('/barnepige') ? 'caregiver' : 'approver';
+    if (pathname.startsWith('/barnepige')) return 'caregiver';
+    if (pathname.startsWith('/administrator') || pathname.startsWith('/admin')) return 'administrator';
+    return 'approver';
 }
 
 const HOME_PATHS = {
     approver: '/godkender/overblik',
+    administrator: '/administrator/overblik',
     caregiver: '/barnepige'
 };
 
@@ -34,13 +37,6 @@ export default function App() {
     async function loadApprovers() {
         const data = await approversApi.getAll();
         setApprovers(data);
-        const selected = data.find(item => item.id === approverId)
-            || data.find(item => item.permissions.includes('manage_permissions'))
-            || data[0];
-        if (selected) {
-            setApproverId(selected.id);
-            localStorage.setItem('demoApproverId', String(selected.id));
-        }
     }
 
     useEffect(() => { loadApprovers().catch(console.error); }, []);
@@ -50,12 +46,26 @@ export default function App() {
         if (routeRole !== userRole) setUserRole(routeRole);
     }, [location.pathname, userRole]);
 
+    useEffect(() => {
+        if (userRole === 'caregiver' || approvers.length === 0) return;
+        const profileRole = userRole === 'administrator' ? 'administrator' : 'approver';
+        const storageKey = userRole === 'administrator' ? 'demoAdministratorId' : 'demoGodkenderId';
+        const savedId = Number(localStorage.getItem(storageKey));
+        const selected = approvers.find(item => item.role === profileRole && item.id === savedId)
+            || approvers.find(item => item.role === profileRole);
+        if (selected && selected.id !== approverId) setApproverId(selected.id);
+        if (selected) localStorage.setItem('demoApproverId', String(selected.id));
+    }, [approvers, approverId, userRole]);
+
     function changeApprover(id) {
         setApproverId(Number(id));
         localStorage.setItem('demoApproverId', String(id));
+        localStorage.setItem(userRole === 'administrator' ? 'demoAdministratorId' : 'demoGodkenderId', String(id));
     }
 
-    const approver = approvers.find(item => item.id === approverId) || null;
+    const profileRole = userRole === 'administrator' ? 'administrator' : 'approver';
+    const visibleApprovers = approvers.filter(item => item.role === profileRole);
+    const approver = visibleApprovers.find(item => item.id === approverId) || visibleApprovers[0] || null;
     const can = permission => hasPermission(approver, permission);
     const guarded = (permission, component) => (
         <PermissionRoute allowed={can(permission)}>{component}</PermissionRoute>
@@ -65,7 +75,7 @@ export default function App() {
         <Layout
             userRole={userRole}
             onRoleChange={setUserRole}
-            approvers={approvers}
+            approvers={visibleApprovers}
             approver={approver}
             onApproverChange={changeApprover}
         >
@@ -73,23 +83,32 @@ export default function App() {
                 <Route path="/" element={<Navigate to={HOME_PATHS[userRole]} replace />} />
 
                 <Route path="/godkender" element={<Navigate to="/godkender/overblik" replace />} />
-                <Route path="/godkender/overblik" element={<AdminDashboard permissions={approver?.permissions || []} />} />
-                <Route path="/godkender/godkendelse" element={<ApprovalPage approver={approver} permissions={approver?.permissions || []} />} />
-                <Route path="/godkender/rapporter" element={guarded('export_reports', <ReportsPage approver={approver} />)} />
-                <Route path="/godkender/boern" element={guarded('manage_children', <ChildrenPage approver={approver} />)} />
+                <Route path="/godkender/overblik" element={<AdminDashboard permissions={approver?.permissions || []} basePath="/godkender" roleLabel="Godkender" />} />
+                <Route path="/godkender/godkendelse" element={<ApprovalPage approver={approver} permissions={approver?.permissions || []} roleLabel="Godkender" />} />
+                <Route path="/godkender/rapporter" element={guarded('export_reports', <ReportsPage approver={approver} roleLabel="Godkender" />)} />
+                <Route path="/godkender/boern" element={guarded('manage_grants', <ChildrenPage approver={approver} roleLabel="Godkender" canManageGrants canManageRecords={can('manage_children')} />)} />
                 <Route path="/godkender/barnepiger" element={guarded('manage_caregivers', <CaregiversPage />)} />
                 <Route path="/godkender/helligdage" element={guarded('manage_holidays', <HolidaysPage />)} />
                 <Route path="/godkender/rettigheder" element={guarded('manage_permissions', <ApproversPage onProfilesChanged={loadApprovers} />)} />
+
+                <Route path="/administrator" element={<Navigate to="/administrator/overblik" replace />} />
+                <Route path="/administrator/overblik" element={<AdminDashboard permissions={approver?.permissions || []} basePath="/administrator" roleLabel="Administrator" />} />
+                <Route path="/administrator/godkendelse" element={<ApprovalPage approver={approver} permissions={approver?.permissions || []} roleLabel="Administrator" />} />
+                <Route path="/administrator/rapporter" element={guarded('export_reports', <ReportsPage approver={approver} roleLabel="Administrator" />)} />
+                <Route path="/administrator/boern" element={guarded('manage_grants', <ChildrenPage approver={approver} roleLabel="Administrator" canManageGrants canManageRecords />)} />
+                <Route path="/administrator/barnepiger" element={guarded('manage_caregivers', <CaregiversPage />)} />
+                <Route path="/administrator/helligdage" element={guarded('manage_holidays', <HolidaysPage />)} />
+                <Route path="/administrator/rettigheder" element={guarded('manage_permissions', <ApproversPage onProfilesChanged={loadApprovers} />)} />
 
                 <Route path="/barnepige" element={<CaregiverDashboard caregiverId={caregiverId} />} />
                 <Route path="/barnepige/registrer" element={<RegisterTime caregiverId={caregiverId} />} />
                 <Route path="/barnepige/mine-timer" element={<MyTimeEntries caregiverId={caregiverId} />} />
 
-                <Route path="/admin" element={<Navigate to="/godkender/overblik" replace />} />
-                <Route path="/admin/godkendelse" element={<Navigate to="/godkender/godkendelse" replace />} />
-                <Route path="/admin/boern" element={<Navigate to="/godkender/boern" replace />} />
-                <Route path="/admin/barnepiger" element={<Navigate to="/godkender/barnepiger" replace />} />
-                <Route path="/admin/helligdage" element={<Navigate to="/godkender/helligdage" replace />} />
+                <Route path="/admin" element={<Navigate to="/administrator/overblik" replace />} />
+                <Route path="/admin/godkendelse" element={<Navigate to="/administrator/godkendelse" replace />} />
+                <Route path="/admin/boern" element={<Navigate to="/administrator/boern" replace />} />
+                <Route path="/admin/barnepiger" element={<Navigate to="/administrator/barnepiger" replace />} />
+                <Route path="/admin/helligdage" element={<Navigate to="/administrator/helligdage" replace />} />
 
                 <Route path="*" element={<Navigate to={HOME_PATHS[userRole]} replace />} />
             </Routes>

@@ -227,6 +227,43 @@ router.put('/:id', requirePermission(PERMISSIONS.MANAGE_CHILDREN), (req, res) =>
     }
 });
 
+// Godkendere kan vedligeholde selve bevillingen uden adgang til barnets stamdata.
+router.put('/:id/grant', requirePermission(PERMISSIONS.MANAGE_GRANTS), (req, res) => {
+    try {
+        const existing = db.prepare('SELECT * FROM children WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Barn ikke fundet' });
+        const existingWeekdays = existing.grant_weekdays ? JSON.parse(existing.grant_weekdays) : null;
+        const mergedGrant = {
+            grant_type: req.body.grant_type ?? existing.grant_type,
+            grant_hours: req.body.grant_hours ?? existing.grant_hours,
+            grant_weekdays: req.body.grant_weekdays !== undefined ? req.body.grant_weekdays : existingWeekdays,
+            has_frame_grant: req.body.has_frame_grant ?? Boolean(existing.has_frame_grant),
+            frame_hours: req.body.frame_hours ?? existing.frame_hours
+        };
+        const grant = validateGrant(mergedGrant);
+        db.prepare(`
+            UPDATE children SET
+                grant_type = ?, grant_hours = ?, grant_weekdays = ?,
+                has_frame_grant = ?, frame_hours = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `).run(
+            grant.grantType,
+            grant.grantHours,
+            grant.weekdays ? JSON.stringify(grant.weekdays) : null,
+            mergedGrant.has_frame_grant ? 1 : 0,
+            grant.frameHours,
+            req.params.id
+        );
+        const child = db.prepare('SELECT * FROM children WHERE id = ?').get(req.params.id);
+        res.json({
+            ...toPublicChild(child),
+            grant_weekdays: child.grant_weekdays ? JSON.parse(child.grant_weekdays) : null
+        });
+    } catch (error) {
+        handleError(res, error, 'Kunne ikke opdatere bevilling');
+    }
+});
+
 router.delete('/:id', requirePermission(PERMISSIONS.MANAGE_CHILDREN), (req, res) => {
     try {
         const existing = db.prepare('SELECT id FROM children WHERE id = ? AND deleted_at IS NULL').get(req.params.id);

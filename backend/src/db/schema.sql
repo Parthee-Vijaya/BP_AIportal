@@ -12,12 +12,13 @@ CREATE TABLE IF NOT EXISTS caregivers (
     deleted_at DATETIME
 );
 
--- Godkendere. Kernerettighederne overblik og godkend/afvis følger rollen.
--- Administrative rettigheder ligger separat i approver_permissions.
+-- Godkendere og administratorer. Kernerettigheder følger rollen, mens
+-- eventuelle ekstra rettigheder ligger separat i approver_permissions.
 CREATE TABLE IF NOT EXISTS approvers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
+    role TEXT NOT NULL DEFAULT 'approver' CHECK (role IN ('approver', 'administrator')),
     active INTEGER NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

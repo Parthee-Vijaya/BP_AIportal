@@ -48,6 +48,7 @@ export const childrenApi = {
     getById: (id) => fetchApi(`/children/${id}`),
     create: (data) => fetchApi('/children', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => fetchApi(`/children/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    updateGrant: (id, data) => fetchApi(`/children/${id}/grant`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id) => fetchApi(`/children/${id}`, { method: 'DELETE' })
 };
 

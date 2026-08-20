@@ -5,8 +5,8 @@ import { formatDate, formatHours } from '../../utils/helpers';
 
 const ArrowIcon = () => <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>;
 
-export default function AdminDashboard({ permissions = [] }) {
-    const canManageChildren = permissions.includes('manage_children');
+export default function AdminDashboard({ permissions = [], basePath = '/godkender', roleLabel = 'Godkender' }) {
+    const canManageGrants = permissions.includes('manage_grants');
     const canManageCaregivers = permissions.includes('manage_caregivers');
     const canExportReports = permissions.includes('export_reports');
     const [stats, setStats] = useState({ pendingCount: 0, pendingHours: 0, exceededCount: 0, approvedToday: 0, childrenCount: 0, caregiversCount: 0 });
@@ -42,8 +42,8 @@ export default function AdminDashboard({ permissions = [] }) {
     return (
         <div>
             <header className="page-heading !mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div><div className="eyebrow">Godkender</div><h1>Overblik</h1><p>Samlet status for indberettede timer og dagens godkendelsesarbejde.</p></div>
-                <Link to="/godkender/godkendelse" className="btn-primary px-5">Gå til godkendelse</Link>
+                <div><div className="eyebrow">{roleLabel}</div><h1>Overblik</h1><p>Samlet status for indberettede timer og dagens godkendelsesarbejde.</p></div>
+                <Link to={`${basePath}/godkendelse`} className="btn-primary px-5">Gå til godkendelse</Link>
             </header>
 
             <section className="metric-strip mb-5" aria-label="Nøgletal">
@@ -53,17 +53,17 @@ export default function AdminDashboard({ permissions = [] }) {
                 <div className="metric"><div className="metric-label">Godkendt i dag</div><div className="metric-value">{stats.approvedToday}</div><div className="metric-note">Afsluttede registreringer</div></div>
             </section>
 
-            {(canExportReports || canManageChildren || canManageCaregivers) && (
+            {(canExportReports || canManageGrants || canManageCaregivers) && (
                 <nav className="surface mb-5 flex flex-col overflow-hidden rounded-lg sm:flex-row" aria-label="Administration og stamdata">
-                    {canExportReports && <Link to="/godkender/rapporter" className="flex min-h-14 flex-1 items-center justify-between border-b border-stone-200 px-4 text-sm font-bold text-[#823322] sm:border-b-0 sm:border-r"><span>Rapportdashboard <span className="ml-2 font-normal text-slate-500">Excel og filtrering</span></span><ArrowIcon /></Link>}
-                    {canManageChildren && <Link to="/godkender/boern" className="flex min-h-14 flex-1 items-center justify-between border-b border-stone-200 px-4 text-sm font-bold text-[#823322] sm:border-b-0 sm:border-r"><span>Børn og bevillinger <span className="ml-2 font-normal text-slate-500">{stats.childrenCount} børn</span></span><ArrowIcon /></Link>}
-                    {canManageCaregivers && <Link to="/godkender/barnepiger" className="flex min-h-14 flex-1 items-center justify-between px-4 text-sm font-bold text-[#823322]"><span>Barnepiger <span className="ml-2 font-normal text-slate-500">{stats.caregiversCount} personer</span></span><ArrowIcon /></Link>}
+                    {canExportReports && <Link to={`${basePath}/rapporter`} className="flex min-h-14 flex-1 items-center justify-between border-b border-stone-200 px-4 text-sm font-bold text-[#823322] sm:border-b-0 sm:border-r"><span>Rapportdashboard <span className="ml-2 font-normal text-slate-500">Excel og filtrering</span></span><ArrowIcon /></Link>}
+                    {canManageGrants && <Link to={`${basePath}/boern`} className="flex min-h-14 flex-1 items-center justify-between border-b border-stone-200 px-4 text-sm font-bold text-[#823322] sm:border-b-0 sm:border-r"><span>Børn og bevillinger <span className="ml-2 font-normal text-slate-500">{stats.childrenCount} børn</span></span><ArrowIcon /></Link>}
+                    {canManageCaregivers && <Link to={`${basePath}/barnepiger`} className="flex min-h-14 flex-1 items-center justify-between px-4 text-sm font-bold text-[#823322]"><span>Barnepiger <span className="ml-2 font-normal text-slate-500">{stats.caregiversCount} personer</span></span><ArrowIcon /></Link>}
                 </nav>
             )}
 
             <div>
                 <section className="surface min-w-0 overflow-hidden rounded-lg">
-                    <header className="flex items-center justify-between border-b border-stone-200 px-5 py-3.5"><div><h2 className="text-lg font-bold">Seneste afventende</h2><p className="mt-0.5 text-sm text-slate-500">De nyeste registreringer i køen</p></div><Link to="/godkender/godkendelse" className="inline-flex items-center gap-2 text-sm font-bold text-[#823322]">Se alle <ArrowIcon /></Link></header>
+                    <header className="flex items-center justify-between border-b border-stone-200 px-5 py-3.5"><div><h2 className="text-lg font-bold">Seneste afventende</h2><p className="mt-0.5 text-sm text-slate-500">De nyeste registreringer i køen</p></div><Link to={`${basePath}/godkendelse`} className="inline-flex items-center gap-2 text-sm font-bold text-[#823322]">Se alle <ArrowIcon /></Link></header>
                     {recentPending.length === 0 ? <div className="p-10 text-center"><h3 className="font-bold">Ingen afventende registreringer</h3><p className="mt-1 text-sm text-slate-500">Alle registreringer er behandlet.</p></div> : (
                         <div className="divide-y divide-stone-200">
                             <div className="hidden grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_minmax(200px,1.15fr)_80px] gap-5 bg-stone-50 px-5 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500 sm:grid">

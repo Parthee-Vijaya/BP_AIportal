@@ -137,7 +137,7 @@ function SortableHeader({ label, sortKey, currentSort, onSort, className = '' })
     );
 }
 
-export default function ApprovalPage({ isMobileView = false, approver = null, permissions = [] }) {
+export default function ApprovalPage({ isMobileView = false, approver = null, permissions = [], roleLabel = 'Godkender' }) {
     const currentActor = approver?.name || 'Godkender (demo)';
     const canExport = permissions.includes('export_reports');
     const canManageSettings = permissions.includes('manage_settings');
@@ -501,7 +501,7 @@ export default function ApprovalPage({ isMobileView = false, approver = null, pe
             <div className="page-heading mb-0 animate-fade-in">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <div className="eyebrow">Godkender</div>
+                        <div className="eyebrow">{roleLabel}</div>
                         <h1>Godkendelse af timer</h1>
                         <p>Gennemgå, godkend eller afvis registrerede timer.</p>
                         {activeTab === 'pending' && filteredEntries.length > 0 && (

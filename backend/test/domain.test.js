@@ -308,6 +308,74 @@ test('ekstrabevilling kan gives til en konkret ugedagsbevilling', async () => {
     assert.equal(status.effectiveGrantHours, 5);
 });
 
+test('rolleprofiler giver faste godkenderrettigheder og fuld administratoradgang', async () => {
+    const response = await fetch(`${baseUrl}/api/approvers`);
+    assert.equal(response.status, 200);
+    const profiles = await response.json();
+    const administrator = profiles.find(profile => profile.id === primaryApproverId);
+    const approver = profiles.find(profile => profile.id === reportApproverId);
+
+    assert.equal(administrator.role, 'administrator');
+    assert.ok(administrator.permissions.includes('manage_permissions'));
+    assert.ok(administrator.permissions.includes('manage_grants'));
+    assert.equal(approver.role, 'approver');
+    assert.ok(approver.permissions.includes('export_reports'));
+    assert.ok(approver.permissions.includes('manage_grants'));
+    assert.equal(approver.permissions.includes('manage_permissions'), false);
+});
+
+test('godkender kan redigere bevillinger og ekstrabevillinger men ikke barnets stamdata', async () => {
+    const headers = {
+        'Content-Type': 'application/json',
+        'X-Approver-Id': String(reportApproverId)
+    };
+    const grantResponse = await fetch(`${baseUrl}/api/children/${frameChildId}/grant`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ grant_type: 'week', grant_hours: 6, has_frame_grant: true, frame_hours: 55 })
+    });
+    assert.equal(grantResponse.status, 200);
+    assert.equal((await grantResponse.json()).grant_hours, 6);
+
+    const extraResponse = await fetch(`${baseUrl}/api/extra-grants`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+            child_id: frameChildId,
+            hours: 2,
+            from_date: '2026-01-01',
+            to_date: '2026-12-31',
+            grant_source: 'frame',
+            comment: 'Tildelt af almindelig godkender'
+        })
+    });
+    assert.equal(extraResponse.status, 201);
+
+    const childUpdateResponse = await fetch(`${baseUrl}/api/children/${frameChildId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ first_name: 'Må ikke ændres' })
+    });
+    assert.equal(childUpdateResponse.status, 403);
+
+    const permissionResponse = await fetch(`${baseUrl}/api/approvers`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name: 'Ulovlig admin', email: 'ulovlig@example.test', role: 'administrator' })
+    });
+    assert.equal(permissionResponse.status, 403);
+});
+
+test('den sidste administrator kan ikke degraderes', async () => {
+    const response = await fetch(`${baseUrl}/api/approvers/${primaryApproverId}`, {
+        method: 'PUT',
+        headers: approverHeaders(),
+        body: JSON.stringify({ role: 'approver' })
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /Mindst én aktiv administrator/);
+});
+
 test('administrative API-handlinger håndhæver godkenderens rettigheder', async () => {
     const payload = JSON.stringify({ date: '2026-09-01', name: 'Lokaldag', all_day: true });
     const missing = await fetch(`${baseUrl}/api/holidays`, {
@@ -357,10 +425,10 @@ test('rapportdashboard filtrerer registreringer, viser kommentarer og leverer fo
 
     const missingPermission = await fetch(`${baseUrl}/api/reports?${query}`);
     assert.equal(missingPermission.status, 401);
-    const forbidden = await fetch(`${baseUrl}/api/reports?${query}`, {
+    const secondApproverResponse = await fetch(`${baseUrl}/api/reports?${query}`, {
         headers: { 'X-Approver-Id': String(holidayApproverId) }
     });
-    assert.equal(forbidden.status, 403);
+    assert.equal(secondApproverResponse.status, 200, 'alle godkendere skal kunne trække rapporter');
 
     const response = await fetch(`${baseUrl}/api/reports?${query}`, { headers });
     assert.equal(response.status, 200);
