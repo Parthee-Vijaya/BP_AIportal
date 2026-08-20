@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { initializeDatabase } from './db/database.js';
+import { authEnabled, requirePortalUser } from './services/portalAuth.js';
 import childrenRouter from './routes/children.js';
 import caregiversRouter from './routes/caregivers.js';
 import timeEntriesRouter from './routes/timeEntries.js';
@@ -31,7 +32,9 @@ app.use(express.json({ limit: '100kb' }));
 app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
-    res.setHeader('X-Frame-Options', 'DENY');
+    // SAMEORIGIN (ikke DENY): AI-portalen indlejrer appen i en iframe på
+    // samme origin (/barnepige inde i portalen viser /barnepige-app/).
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     next();
 });
 
@@ -44,6 +47,21 @@ app.use((req, res, next) => {
 // Initialize database
 initializeDatabase();
 
+// Health check — før login-vagten, så containerens healthcheck kan nå den.
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        service: 'Barnepige Timeregistrering API'
+    });
+});
+
+// Alle øvrige /api-ruter kræver et gyldigt portal-login (shield-session).
+app.use('/api', requirePortalUser);
+console.log(authEnabled
+    ? 'Portal-login: aktiveret (shield-session valideres mod Entra ID)'
+    : 'Portal-login: SLÅET FRA (ENTRA_TENANT_ID/ENTRA_CLIENT_ID er ikke sat)');
+
 // API Routes
 app.use('/api/children', childrenRouter);
 app.use('/api/caregivers', caregiversRouter);
@@ -54,15 +72,6 @@ app.use('/api/extra-grants', extraGrantsRouter);
 app.use('/api/holidays', holidaysRouter);
 app.use('/api/approvers', approversRouter);
 app.use('/api/reports', reportsRouter);
-
-// Health check
-app.get('/api/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        service: 'Barnepige Timeregistrering API'
-    });
-});
 
 // Serve frontend static files in production
 const distPath = join(__dirname, '../../frontend/dist');

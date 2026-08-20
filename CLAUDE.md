@@ -69,5 +69,26 @@ Core: `caregivers`, `children`, `child_caregiver` (M2M), `time_entries` (with ho
 
 - All UI text is in Danish
 - ESM modules throughout (`"type": "module"` in both package.json files)
-- No authentication system — role selection is client-side only
+- No authentication system of its own — role selection is client-side only (but see AI-portal SSO below)
 - Backend uses `node --watch` for dev hot reload (no nodemon)
+
+## Deployment in Kalundborg's AI-portal (KK-AI-JARVIS01-MONO)
+
+The app runs as the `barnepige` service behind Traefik at `/barnepige-app`
+(standalone) and inside the portal as an iframe at `/barnepige`. The compose
+files in the monorepo root build `Dockerfile` with `VITE_BASE_PATH=/barnepige-app/`;
+Traefik strips the prefix, so the container always sees clean `/` + `/api` paths.
+
+- **Base path**: `vite.config.js` reads `VITE_BASE_PATH`; the router basename and
+  `API_BASE` derive from `import.meta.env.BASE_URL`. Locally everything stays at `/`.
+- **SSO** (`backend/src/services/portalAuth.js`): every `/api` route except
+  `/api/health` requires the portal's `shield-session` cookie (an Entra ID
+  id_token), verified against tenant JWKS. Config via `ENTRA_TENANT_ID`,
+  `ENTRA_CLIENT_ID` (audience; the portal's app registration),
+  `SHIELD_SESSION_COOKIE`, optional `BARNEPIGE_ENTRA_GROUP` (403 unless member).
+  Both unset ⇒ auth disabled (local dev). The verified identity is available to
+  routes as `req.portalUser` (`upn`, `name`, `oid`, `groups`).
+- **Frontend 401 handling**: `utils/api.js` redirects to the portal's silent
+  Entra login (`/api/auth/entra/start?returnTo=…`) and returns to the same page.
+- **Iframe**: `X-Frame-Options` is `SAMEORIGIN` (the portal embeds the app from
+  the same origin) — don't change it back to `DENY`.

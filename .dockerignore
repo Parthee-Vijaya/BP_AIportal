@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+frontend/dist
+docs
+*.md
+*.log
+.git
+.DS_Store
+backend/src/db/*.sqlite
+backend/src/db/*.sqlite-wal
+backend/src/db/*.sqlite-shm
+backend/src/db/*.sqlite-journal
+render.yaml

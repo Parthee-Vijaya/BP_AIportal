@@ -1,4 +1,26 @@
-const API_BASE = '/api';
+// API'et bor under samme base som appen (fx /barnepige-app/api bag portalen).
+const API_BASE = `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`;
+
+// 401 = ikke logget ind i AI-portalen. Send browseren gennem portalens
+// stille Entra-login og tilbage hertil. sessionStorage-vagten forhindrer
+// et redirect-loop hvis login-flowet fejler.
+function redirectToPortalLogin() {
+    const key = 'bpPortalLoginRedirectAt';
+    const last = Number(sessionStorage.getItem(key)) || 0;
+    if (Date.now() - last < 15000) return;
+    sessionStorage.setItem(key, String(Date.now()));
+    const returnTo = window.location.pathname + window.location.search;
+    window.location.assign(`/api/auth/entra/start?returnTo=${encodeURIComponent(returnTo)}`);
+}
+
+async function handleErrorResponse(response, fallbackMessage) {
+    if (response.status === 401) {
+        redirectToPortalLogin();
+        throw new Error('Du skal være logget ind i AI-portalen');
+    }
+    const error = await response.json().catch(() => ({ error: fallbackMessage }));
+    throw new Error(error.error || fallbackMessage);
+}
 
 async function fetchApi(endpoint, options = {}) {
     const approverId = localStorage.getItem('demoApproverId');
@@ -12,8 +34,7 @@ async function fetchApi(endpoint, options = {}) {
     });
 
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Ukendt fejl' }));
-        throw new Error(error.error || 'API fejl');
+        await handleErrorResponse(response, 'Ukendt fejl');
     }
 
     return response.json();
@@ -25,8 +46,7 @@ async function downloadApi(endpoint) {
         headers: approverId ? { 'X-Approver-Id': approverId } : {}
     });
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Kunne ikke hente filen' }));
-        throw new Error(error.error || 'Kunne ikke hente filen');
+        await handleErrorResponse(response, 'Kunne ikke hente filen');
     }
 
     const disposition = response.headers.get('Content-Disposition') || '';
