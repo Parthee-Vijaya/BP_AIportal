@@ -36,11 +36,13 @@ export function NoAccessScreen({ onOpenRolePicker }) {
 }
 
 // "Rigtige data": brugeren er logget ind, men er ikke oprettet i appen endnu
-// (eller har en profil der ikke rækker til den valgte visning).
+// (eller har en profil der ikke rækker til den valgte visning). Vises INDE i
+// appens layout, så man stadig kan skifte visning i headeren — aldrig som en
+// helsides blokering.
 const NOT_REGISTERED_TEXTS = {
     caregiver: {
         title: 'Du er ikke oprettet som barnepige endnu',
-        body: 'En administrator skal oprette dig under Barnepiger med den e-mail, du logger ind med. Derefter ser du automatisk dine egne børn og timer her.'
+        body: 'En administrator skal oprette dig under Barnepiger med den e-mail, du logger ind med. Derefter ser du automatisk dine egne børn og timer her. Du kan skifte til en anden visning i menuen øverst.'
     },
     staff: {
         title: 'Du er ikke oprettet som godkender eller administrator',
@@ -48,22 +50,20 @@ const NOT_REGISTERED_TEXTS = {
     },
     adminMismatch: {
         title: 'Din profil er godkender',
-        body: 'Administrator-visningen kræver en administratorprofil. En administrator kan ændre din rolle under Roller og rettigheder.'
+        body: 'Administrator-visningen kræver en administratorprofil. En administrator kan ændre din rolle under Roller og rettigheder. Du kan skifte til Godkender-visningen i menuen øverst.'
     }
 };
 
-export function NotRegisteredScreen({ variant = 'staff', onOpenRolePicker }) {
+export function NotRegisteredNotice({ variant = 'staff', onOpenRolePicker }) {
     const text = NOT_REGISTERED_TEXTS[variant] || NOT_REGISTERED_TEXTS.staff;
     return (
-        <LockedShell>
-            <div className="w-full rounded-2xl border border-stone-200 bg-white p-8 text-center shadow-sm">
-                <h1 className="text-xl font-bold text-slate-900">{text.title}</h1>
-                <p className="mt-2 text-sm text-slate-600">{text.body}</p>
-                <button type="button" onClick={onOpenRolePicker} className="btn-primary mt-5">
-                    Skift roller og data
-                </button>
-            </div>
-        </LockedShell>
+        <div className="mx-auto mt-8 max-w-xl rounded-2xl border border-stone-200 bg-white p-8 text-center shadow-sm">
+            <h1 className="text-xl font-bold text-slate-900">{text.title}</h1>
+            <p className="mt-2 text-sm text-slate-600">{text.body}</p>
+            <button type="button" onClick={onOpenRolePicker} className="btn-primary mt-5">
+                Skift roller og data
+            </button>
+        </div>
     );
 }
 

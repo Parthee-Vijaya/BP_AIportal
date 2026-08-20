@@ -13,7 +13,7 @@ import CaregiverDashboard from './pages/caregiver/CaregiverDashboard';
 import RegisterTime from './pages/caregiver/RegisterTime';
 import MyTimeEntries from './pages/caregiver/MyTimeEntries';
 import DemoRoleScreen from './components/DemoRoleScreen';
-import { NoAccessScreen, NoRolesScreen, NotRegisteredScreen } from './components/AccessScreens';
+import { NoAccessScreen, NoRolesScreen, NotRegisteredNotice } from './components/AccessScreens';
 import { approversApi, caregiversApi, meApi } from './utils/api';
 import { hasPermission } from './utils/permissions';
 import { ALL_ROLE_KEYS, DATA_SOURCES, loadDataSource, loadDemoRoles, saveDataSource, saveDemoRoles, viewsForRoles } from './utils/demoRoles';
@@ -138,17 +138,18 @@ export default function App() {
     if (!availableViews.includes(currentView)) {
         return <Navigate to={HOME_PATHS[availableViews[0]]} replace />;
     }
-    // Rigtige data: er brugeren overhovedet oprettet i appen til den valgte visning?
+    // Rigtige data: er brugeren oprettet i appen til den valgte visning? Hvis
+    // ikke, vises en venlig besked INDE i layoutet — headeren (visningsvælger,
+    // badge, brugermenu) bliver, så man frit kan skifte til en anden visning.
+    let lockedNotice = null;
     if (liveMode && me) {
         const isStaffView = currentView === 'approver' || currentView === 'administrator';
         if (isStaffView && !me.approverProfile) {
-            return <NotRegisteredScreen variant="staff" onOpenRolePicker={() => setRolePickerOpen(true)} />;
-        }
-        if (currentView === 'administrator' && me.approverProfile?.role !== 'administrator') {
-            return <NotRegisteredScreen variant="adminMismatch" onOpenRolePicker={() => setRolePickerOpen(true)} />;
-        }
-        if (currentView === 'caregiver' && !me.caregiverProfile) {
-            return <NotRegisteredScreen variant="caregiver" onOpenRolePicker={() => setRolePickerOpen(true)} />;
+            lockedNotice = 'staff';
+        } else if (currentView === 'administrator' && me.approverProfile?.role !== 'administrator') {
+            lockedNotice = 'adminMismatch';
+        } else if (currentView === 'caregiver' && !me.caregiverProfile) {
+            lockedNotice = 'caregiver';
         }
     }
 
@@ -167,6 +168,11 @@ export default function App() {
             onCaregiverChange={changeCaregiver}
             dataSource={dataSource}
         >
+            {liveMode && me === undefined ? (
+                <p className="py-16 text-center text-sm text-slate-600">Henter din profil…</p>
+            ) : lockedNotice ? (
+                <NotRegisteredNotice variant={lockedNotice} onOpenRolePicker={() => setRolePickerOpen(true)} />
+            ) : (
             <Routes>
                 <Route path="/" element={<Navigate to={HOME_PATHS[userRole]} replace />} />
 
@@ -200,6 +206,7 @@ export default function App() {
 
                 <Route path="*" element={<Navigate to={HOME_PATHS[userRole]} replace />} />
             </Routes>
+            )}
         </Layout>
     );
 }
