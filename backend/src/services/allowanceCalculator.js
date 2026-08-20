@@ -1,270 +1,166 @@
 /**
- * Tillægsberegning for Barnepige Timeregistrering
- *
- * REGLER:
- *
- * HVERDAGE (mandag-fredag):
- * - 00:00-06:00: Nattillæg
- * - 06:01-17:00: Normaltimer
- * - 17:01-23:00: Aftentillæg
- * - 23:00-23:59: Nattillæg
- *
- * LØRDAGE:
- * - 00:00-06:00: Nattillæg
- * - 06:01-08:00: Normaltimer
- * - 08:01-23:59: Lørdagstillæg
- *
- * SØN- OG HELLIGDAGE:
- * - 00:00-23:59: Søndags- og helligdagstillæg
- *
- * OBS: Helligdage OVERRULER andre dage!
+ * Beregner grundtimer og tillæg for en timeregistrering.
+ * Alle registreringer må højst spænde over ét døgn, og intervaller behandles
+ * som halvt åbne: 17:00-18:00 er fx én aftentime.
  */
 
 import db from '../db/database.js';
+import {
+    assertDate,
+    assertTimeRange,
+    parseTimeMinutes,
+    ValidationError
+} from '../utils/validation.js';
+import { getOfficialHolidayDates } from './holidayCalendar.js';
 
-// Danske helligdage (beregnes dynamisk)
-function getDanishHolidays(year) {
-    const holidays = [];
+const MINUTES_PER_DAY = 24 * 60;
+const QUARTER_MINUTES = 15;
+export const ALLOWANCE_CALCULATION_VERSION = '2026-08-v2';
 
-    // Faste helligdage
-    holidays.push(`${year}-01-01`); // Nytårsdag
-    holidays.push(`${year}-05-01`); // 1. maj (behandles som helligdag)
-    holidays.push(`${year}-06-05`); // Grundlovsdag (5. juni - behandles som helligdag)
-    holidays.push(`${year}-12-24`); // Juleaftensdag (behandles som helligdag)
-    holidays.push(`${year}-12-25`); // Juledag
-    holidays.push(`${year}-12-26`); // 2. Juledag
-    holidays.push(`${year}-12-31`); // Nytårsaftensdag (behandles som helligdag)
-
-    // Særskilte datoer (HEAO-afklaring): 21. jan 2026 m.m.
-    if (year === 2026) {
-        holidays.push('2026-01-21');
-    }
-
-    // Påskebaserede helligdage (beregnes ud fra påskedag)
-    const easterDate = calculateEasterDate(year);
-
-    // Skærtorsdag (3 dage før påske)
-    holidays.push(addDays(easterDate, -3));
-    // Langfredag (2 dage før påske)
-    holidays.push(addDays(easterDate, -2));
-    // Påskedag
-    holidays.push(formatDate(easterDate));
-    // 2. Påskedag (1 dag efter påske)
-    holidays.push(addDays(easterDate, 1));
-    // Store Bededag (26 dage efter påske) - BEMÆRK: Afskaffet fra 2024, men medtages for ældre data
-    // holidays.push(addDays(easterDate, 26)); // Fjernet da den er afskaffet
-    // Kristi Himmelfartsdag (39 dage efter påske)
-    holidays.push(addDays(easterDate, 39));
-    // Pinsedag (49 dage efter påske)
-    holidays.push(addDays(easterDate, 49));
-    // 2. Pinsedag (50 dage efter påske)
-    holidays.push(addDays(easterDate, 50));
-
-    return holidays;
+function dateFromString(dateStr) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
 }
 
-// Beregn påskedag (Computus-algoritmen)
-function calculateEasterDate(year) {
-    const a = year % 19;
-    const b = Math.floor(year / 100);
-    const c = year % 100;
-    const d = Math.floor(b / 4);
-    const e = b % 4;
-    const f = Math.floor((b + 8) / 25);
-    const g = Math.floor((b - f + 1) / 3);
-    const h = (19 * a + b - d - g + 15) % 30;
-    const i = Math.floor(c / 4);
-    const k = c % 4;
-    const l = (32 + 2 * e + 2 * i - h - k) % 7;
-    const m = Math.floor((a + 11 * h + 22 * l) / 451);
-    const month = Math.floor((h + l - 7 * m + 114) / 31);
-    const day = ((h + l - 7 * m + 114) % 31) + 1;
-
-    return new Date(year, month - 1, day);
+function formatDate(date) {
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 function addDays(date, days) {
     const result = new Date(date);
-    result.setDate(result.getDate() + days);
+    result.setUTCDate(result.getUTCDate() + days);
     return formatDate(result);
 }
 
-function formatDate(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+function addDaysToString(dateStr, days) {
+    return addDays(dateFromString(dateStr), days);
 }
 
-// Tjek om en dato er en helligdag (hardcoded + custom fra DB)
-function isHoliday(dateStr) {
-    const date = new Date(dateStr);
-    const year = date.getFullYear();
-    const holidays = getDanishHolidays(year);
-    if (holidays.includes(dateStr)) return true;
-
-    try {
-        const monthDay = dateStr.slice(5);
-        const custom = db.prepare(
-            `SELECT * FROM custom_holidays
-             WHERE (date = ? AND recurring = 0)
-                OR (recurring = 1 AND substr(date, 6) = ?)`
-        ).get(dateStr, monthDay);
-        return !!custom;
-    } catch {
-        return false;
-    }
+function getDanishHolidays(year) {
+    return getOfficialHolidayDates(year);
 }
 
-// Få ugedagsnummer (0 = søndag, 6 = lørdag)
+function getCustomHolidays(dateStr) {
+    const monthDay = dateStr.slice(5);
+    return db.prepare(`
+        SELECT * FROM custom_holidays
+        WHERE (date = ? AND recurring = 0)
+           OR (recurring = 1 AND substr(date, 6) = ?)
+    `).all(dateStr, monthDay);
+}
+
+/**
+ * Tjekker om et tidspunkt ligger på en officiel eller brugerdefineret helligdag.
+ * Uden minuteOfDay bevares den tidligere boolske dagskontrol.
+ */
+function isHoliday(dateStr, minuteOfDay = null) {
+    assertDate(dateStr);
+    const year = Number(dateStr.slice(0, 4));
+    if (getDanishHolidays(year).includes(dateStr)) return true;
+
+    const customHolidays = getCustomHolidays(dateStr);
+    if (minuteOfDay == null) return customHolidays.length > 0;
+
+    return customHolidays.some(holiday => {
+        if (holiday.all_day) return true;
+        if (!holiday.start_time || !holiday.end_time) return false;
+        try {
+            const start = parseTimeMinutes(holiday.start_time);
+            const end = parseTimeMinutes(holiday.end_time);
+            return start < end && minuteOfDay >= start && minuteOfDay < end;
+        } catch {
+            return false;
+        }
+    });
+}
+
 function getDayOfWeek(dateStr) {
-    const date = new Date(dateStr);
-    return date.getDay();
+    return dateFromString(dateStr).getUTCDay();
 }
 
-// Parse tid til minutter siden midnat
-function timeToMinutes(timeStr) {
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    return hours * 60 + minutes;
+function roundUpToQuarter(minutes) {
+    return Math.ceil(minutes / QUARTER_MINUTES) * QUARTER_MINUTES;
 }
 
-/**
- * Rund tid op til nærmeste kvarter
- * Eksempel: 12:07 -> 12:15, 13:47 -> 14:00, 12:00 -> 12:00
- * @param {string} timeStr - Tid i format HH:MM
- * @returns {string} - Afrundet tid i format HH:MM
- */
-function roundUpToQuarter(timeStr) {
-    const [hours, minutes] = timeStr.split(':').map(Number);
+function addSupplement(result, dateStr, minuteOfDay, hours) {
+    const dayOfWeek = getDayOfWeek(dateStr);
 
-    // Hvis minutter allerede er 00, 15, 30 eller 45, returner uændret
-    if (minutes % 15 === 0) {
-        return timeStr;
+    if (dayOfWeek === 0 || isHoliday(dateStr, minuteOfDay)) {
+        result.sunday_holiday_hours += hours;
+        return;
     }
 
-    // Rund op til nærmeste kvarter
-    const roundedMinutes = Math.ceil(minutes / 15) * 15;
-
-    if (roundedMinutes === 60) {
-        // Næste time
-        const newHours = (hours + 1) % 24;
-        return `${String(newHours).padStart(2, '0')}:00`;
+    if (dayOfWeek === 6) {
+        if (minuteOfDay < 6 * 60) {
+            result.night_hours += hours;
+        } else if (minuteOfDay >= 8 * 60) {
+            result.saturday_hours += hours;
+        }
+        return;
     }
 
-    return `${String(hours).padStart(2, '0')}:${String(roundedMinutes).padStart(2, '0')}`;
+    if (minuteOfDay < 6 * 60 || minuteOfDay >= 23 * 60) {
+        result.night_hours += hours;
+    } else if (minuteOfDay >= 17 * 60) {
+        result.evening_hours += hours;
+    }
 }
 
 /**
- * Rund starttid op til nærmeste kvarter (start rundes op)
- * Rund sluttid op til nærmeste kvarter (slut rundes også op)
- * Eksempel: 12:07-13:47 -> 12:15-14:00 = 1 time 45 min
- */
-function roundTimesToQuarters(startTime, endTime) {
-    return {
-        roundedStart: roundUpToQuarter(startTime),
-        roundedEnd: roundUpToQuarter(endTime)
-    };
-}
-
-// Beregn overlap mellem to tidsintervaller (i minutter)
-function calculateOverlap(start1, end1, start2, end2) {
-    const overlapStart = Math.max(start1, start2);
-    const overlapEnd = Math.min(end1, end2);
-    return Math.max(0, overlapEnd - overlapStart);
-}
-
-/**
- * Beregn tillæg for en registrering
- * @param {string} dateStr - Dato i format YYYY-MM-DD
- * @param {string} startTime - Starttid i format HH:MM
- * @param {string} endTime - Sluttid i format HH:MM
- * @returns {Object} - Beregnede timer fordelt på kategorier
+ * Beregn tillæg for en registrering.
+ * Tider rundes op til nærmeste kvarter som hidtil, men datoovergange
+ * klassificeres efter den faktiske kalenderdag.
  */
 export function calculateAllowances(dateStr, startTime, endTime) {
-    // Rund tider op til nærmeste kvarter
-    const { roundedStart, roundedEnd } = roundTimesToQuarters(startTime, endTime);
+    assertDate(dateStr);
+    assertTimeRange(startTime, endTime);
 
-    const startMinutes = timeToMinutes(roundedStart);
-    let endMinutes = timeToMinutes(roundedEnd);
+    const rawStart = parseTimeMinutes(startTime);
+    const rawEnd = parseTimeMinutes(endTime);
+    const crossesMidnight = rawEnd < rawStart;
+    const roundedStart = roundUpToQuarter(rawStart);
+    const roundedEnd = roundUpToQuarter(rawEnd) + (crossesMidnight ? MINUTES_PER_DAY : 0);
 
-    // Håndter midnat-overgang (sluttid næste dag)
-    if (endMinutes <= startMinutes) {
-        endMinutes += 24 * 60; // Tilføj 24 timer
+    if (roundedEnd <= roundedStart) {
+        throw new ValidationError('Tidsrummet giver ingen registrerbare timer efter kvartersafrunding');
     }
 
-    const totalMinutes = endMinutes - startMinutes;
-    const dayOfWeek = getDayOfWeek(dateStr);
-    const holiday = isHoliday(dateStr);
+    const totalMinutes = roundedEnd - roundedStart;
+    if (totalMinutes >= MINUTES_PER_DAY) {
+        throw new ValidationError('En registrering skal være kortere end 24 timer');
+    }
 
-    let result = {
-        normal_hours: 0,
+    const result = {
+        normal_hours: totalMinutes / 60,
         evening_hours: 0,
         night_hours: 0,
         saturday_hours: 0,
         sunday_holiday_hours: 0,
-        total_hours: 0
+        total_hours: totalMinutes / 60
     };
 
-    // ALLE timer registreres som normaltimer (total_hours = normal_hours)
-    // Tillæg beregnes OVENI som ekstra (ikke i stedet for)
-    const totalHours = totalMinutes / 60;
-    result.normal_hours = totalHours;
-    result.total_hours = totalHours;
-
-    // Søndage (0) eller helligdage - søndags/helligdagstillæg på alle timer
-    if (dayOfWeek === 0 || holiday) {
-        result.sunday_holiday_hours = totalHours;
-        return roundResult(result);
+    for (let absoluteMinute = roundedStart; absoluteMinute < roundedEnd; absoluteMinute += QUARTER_MINUTES) {
+        const dateOffset = Math.floor(absoluteMinute / MINUTES_PER_DAY);
+        const minuteOfDay = absoluteMinute % MINUTES_PER_DAY;
+        addSupplement(
+            result,
+            addDaysToString(dateStr, dateOffset),
+            minuteOfDay,
+            QUARTER_MINUTES / 60
+        );
     }
-
-    // Lørdage (6)
-    if (dayOfWeek === 6) {
-        // Nattillæg: 00:00-06:00
-        const nightMinutes1 = calculateOverlap(startMinutes, Math.min(endMinutes, 24 * 60), 0, 360);
-
-        // Lørdagstillæg: 08:00-23:59
-        const saturdayMinutes = calculateOverlap(startMinutes, Math.min(endMinutes, 24 * 60), 480, 1440);
-
-        // Timer efter midnat (på søndag = søndagstillæg)
-        if (endMinutes > 24 * 60) {
-            result.sunday_holiday_hours = (endMinutes - 24 * 60) / 60;
-        }
-
-        result.night_hours = nightMinutes1 / 60;
-        result.saturday_hours = saturdayMinutes / 60;
-
-        return roundResult(result);
-    }
-
-    // Hverdage (mandag-fredag, 1-5)
-    // Nattillæg morgen: 00:00-06:00
-    const nightMorning = calculateOverlap(startMinutes, Math.min(endMinutes, 24 * 60), 0, 360);
-
-    // Aftentillæg: 17:00-23:00
-    const eveningMinutes = calculateOverlap(startMinutes, Math.min(endMinutes, 24 * 60), 1020, 1380);
-
-    // Nattillæg aften: 23:00-23:59
-    const nightEvening = calculateOverlap(startMinutes, Math.min(endMinutes, 24 * 60), 1380, 1440);
-
-    // Timer efter midnat (næste dag)
-    let nightAfterMidnight = 0;
-    if (endMinutes > 24 * 60) {
-        nightAfterMidnight = Math.min(endMinutes - 24 * 60, 360);
-    }
-
-    result.night_hours = (nightMorning + nightEvening + nightAfterMidnight) / 60;
-    result.evening_hours = eveningMinutes / 60;
 
     return roundResult(result);
 }
 
-// Afrund alle værdier til 2 decimaler
 function roundResult(result) {
-    for (const key in result) {
+    for (const key of Object.keys(result)) {
         result[key] = Math.round(result[key] * 100) / 100;
     }
     return result;
 }
 
-// Eksporter helligdags-funktioner for test
 export { getDanishHolidays, isHoliday };

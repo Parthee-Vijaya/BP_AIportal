@@ -1,17 +1,31 @@
 import { Router } from 'express';
 import db from '../db/database.js';
 import { Parser } from 'json2csv';
+import { checkGrant, getGrantSummary } from '../services/grantCalculator.js';
+import { PERMISSIONS, requirePermission } from '../services/permissions.js';
 
 const router = Router();
 
+function sanitizeSpreadsheetValue(value) {
+    if (typeof value === 'string' && /^[=+\-@]/.test(value)) return `'${value}`;
+    return value;
+}
+
+function sanitizeSpreadsheetRows(rows) {
+    return rows.map(row => Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [key, sanitizeSpreadsheetValue(value)])
+    ));
+}
+
 // GET /api/export/time-entries - Eksporter registreringer til CSV
-router.get('/time-entries', (req, res) => {
+router.get('/time-entries', requirePermission(PERMISSIONS.EXPORT_REPORTS), (req, res) => {
     try {
         const { status, child_id, caregiver_id, from_date, to_date, format } = req.query;
 
         let query = `
             SELECT
                 te.id,
+                te.child_id as _child_id,
                 cg.first_name || ' ' || cg.last_name as barnepige,
                 cg.ma_number as ma_nummer,
                 c.first_name || ' ' || c.last_name as barn,
@@ -24,6 +38,8 @@ router.get('/time-entries', (req, res) => {
                 te.saturday_hours as loerdagstillaeg,
                 te.sunday_holiday_hours as soendags_helligdagstillaeg,
                 te.total_hours as total_timer,
+                te.calculation_version as beregningsversion,
+                te.grant_source as bevillingskilde,
                 te.comment as kommentar,
                 te.status,
                 te.submitted_at as indberettet,
@@ -70,10 +86,26 @@ router.get('/time-entries', (req, res) => {
         const entries = db.prepare(query).all(...params);
 
         // Translate status
-        const translatedEntries = entries.map(entry => ({
-            ...entry,
-            status: translateStatus(entry.status)
-        }));
+        const translatedEntries = entries.map(entry => {
+            const grantStatus = checkGrant(entry._child_id, entry.dato, 0, {
+                useFrameGrant: entry.bevillingskilde === 'frame'
+            });
+            const { _child_id, ...publicEntry } = entry;
+            return {
+                ...publicEntry,
+                status: translateStatus(entry.status),
+                ramme_grundtimer: grantStatus.isFrameGrant ? grantStatus.baseGrantHours : '',
+                ramme_grundtimer_brugt: grantStatus.isFrameGrant ? grantStatus.baseUsedHours : '',
+                ekstra_timer_tildelt: grantStatus.extraGrantHours || '',
+                ekstra_timer_brugt: grantStatus.extraUsedHours || '',
+                ekstra_timer_resterende: grantStatus.extraRemainingHours || '',
+                ekstrabevillinger: grantStatus.extraGrants?.length
+                    ? grantStatus.extraGrants.map(grant => (
+                        `${grant.hours} t. givet ${grant.granted_at || grant.created_at} af ${grant.granted_by}`
+                    )).join(' | ')
+                    : ''
+            };
+        });
 
         if (format === 'json') {
             res.json(translatedEntries);
@@ -95,6 +127,14 @@ router.get('/time-entries', (req, res) => {
             { label: 'Lørdagstillæg', value: 'loerdagstillaeg' },
             { label: 'Søndags-/helligdagstillæg', value: 'soendags_helligdagstillaeg' },
             { label: 'Total timer', value: 'total_timer' },
+            { label: 'Beregningsversion', value: 'beregningsversion' },
+            { label: 'Bevillingskilde', value: 'bevillingskilde' },
+            { label: 'Ramme grundtimer', value: 'ramme_grundtimer' },
+            { label: 'Ramme grundtimer brugt', value: 'ramme_grundtimer_brugt' },
+            { label: 'Ekstra timer tildelt', value: 'ekstra_timer_tildelt' },
+            { label: 'Ekstra timer brugt', value: 'ekstra_timer_brugt' },
+            { label: 'Ekstra timer resterende', value: 'ekstra_timer_resterende' },
+            { label: 'Ekstrabevillinger (tildeling)', value: 'ekstrabevillinger' },
             { label: 'Kommentar', value: 'kommentar' },
             { label: 'Status', value: 'status' },
             { label: 'Indberettet', value: 'indberettet' },
@@ -106,7 +146,7 @@ router.get('/time-entries', (req, res) => {
         ];
 
         const parser = new Parser({ fields, delimiter: ';' });
-        const csv = parser.parse(translatedEntries);
+        const csv = parser.parse(sanitizeSpreadsheetRows(translatedEntries));
 
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename=timeregistreringer-${new Date().toISOString().split('T')[0]}.csv`);
@@ -120,7 +160,7 @@ router.get('/time-entries', (req, res) => {
 });
 
 // GET /api/export/children - Eksporter børn
-router.get('/children', (req, res) => {
+router.get('/children', requirePermission(PERMISSIONS.EXPORT_REPORTS), (req, res) => {
     try {
         const children = db.prepare(`
             SELECT
@@ -135,16 +175,28 @@ router.get('/children', (req, res) => {
                 GROUP_CONCAT(cg.first_name || ' ' || cg.last_name, ', ') as tilknyttede_barnepiger
             FROM children c
             LEFT JOIN child_caregiver cc ON c.id = cc.child_id
-            LEFT JOIN caregivers cg ON cc.caregiver_id = cg.id
+            LEFT JOIN caregivers cg ON cc.caregiver_id = cg.id AND cg.deleted_at IS NULL
+            WHERE c.deleted_at IS NULL
             GROUP BY c.id
             ORDER BY c.last_name, c.first_name
         `).all();
 
         // Translate grant type
-        const translatedChildren = children.map(child => ({
-            ...child,
-            bevillingstype: translateGrantType(child.bevillingstype)
-        }));
+        const translatedChildren = children.map(child => {
+            const summary = getGrantSummary(child.id);
+            return {
+                ...child,
+                bevillingstype: translateGrantType(child.bevillingstype),
+                ekstra_timer_tildelt: summary?.allExtraGrantHours ?? summary?.extraGrantHours ?? '',
+                ekstra_timer_brugt: summary?.allExtraUsedHours ?? summary?.extraUsedHours ?? '',
+                ekstra_timer_resterende: summary?.allExtraRemainingHours ?? summary?.extraRemainingHours ?? '',
+                ekstrabevillinger: [...(summary?.extraGrants || []), ...(summary?.normalGrantSummary?.extraGrants || [])].length
+                    ? [...(summary?.extraGrants || []), ...(summary?.normalGrantSummary?.extraGrants || [])].map(grant => (
+                        `${grant.hours} t. givet ${grant.granted_at || grant.created_at} af ${grant.granted_by}`
+                    )).join(' | ')
+                    : ''
+            };
+        });
 
         const { format } = req.query;
         if (format === 'json') {
@@ -161,11 +213,15 @@ router.get('/children', (req, res) => {
             { label: 'Bevilling (timer)', value: 'bevilling_timer' },
             { label: 'Rammebevilling', value: 'rammebevilling' },
             { label: 'Rammebevilling (timer)', value: 'rammebevilling_timer' },
+            { label: 'Ekstra timer tildelt', value: 'ekstra_timer_tildelt' },
+            { label: 'Ekstra timer brugt', value: 'ekstra_timer_brugt' },
+            { label: 'Ekstra timer resterende', value: 'ekstra_timer_resterende' },
+            { label: 'Ekstrabevillinger (tildeling)', value: 'ekstrabevillinger' },
             { label: 'Tilknyttede barnepiger', value: 'tilknyttede_barnepiger' }
         ];
 
         const parser = new Parser({ fields, delimiter: ';' });
-        const csv = parser.parse(translatedChildren);
+        const csv = parser.parse(sanitizeSpreadsheetRows(translatedChildren));
 
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename=boern-${new Date().toISOString().split('T')[0]}.csv`);

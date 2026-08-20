@@ -1,28 +1,35 @@
 import { Router } from 'express';
-import https from 'node:https';
 import db from '../db/database.js';
+import {
+    assertDate,
+    assertTimeRange,
+    isValidationError,
+    parseTimeMinutes,
+    ValidationError
+} from '../utils/validation.js';
+import { getHolidayCalendar } from '../services/holidayCalendar.js';
+import { PERMISSIONS, requirePermission } from '../services/permissions.js';
 
 const router = Router();
 
-const kalendariumCache = new Map();
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+function validateHoliday({ date, name, all_day, start_time, end_time }) {
+    assertDate(date);
+    const trimmedName = String(name ?? '').trim();
+    if (!trimmedName) throw new ValidationError('Dato og navn er påkrævet');
+    if (trimmedName.length > 20) throw new ValidationError('Navn må maks. være 20 tegn');
+    if (!all_day) {
+        assertTimeRange(start_time, end_time);
+        if (parseTimeMinutes(start_time) >= parseTimeMinutes(end_time)) {
+            throw new ValidationError('En delvis helligdag skal starte før den slutter samme dag');
+        }
+    }
+    return trimmedName;
+}
 
-function fetchKalendarium(url) {
-    return new Promise((resolve, reject) => {
-        const req = https.get(url, { agent: httpsAgent, headers: { 'User-Agent': 'BarnepigeTR/1.0' } }, (res) => {
-            let data = '';
-            res.on('data', chunk => { data += chunk; });
-            res.on('end', () => {
-                if (res.statusCode >= 200 && res.statusCode < 300) {
-                    resolve(JSON.parse(data));
-                } else {
-                    reject(new Error(`HTTP ${res.statusCode}`));
-                }
-            });
-        });
-        req.on('error', reject);
-        req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
-    });
+function handleError(res, error, fallback) {
+    if (isValidationError(error)) return res.status(400).json({ error: error.message });
+    console.error(fallback, error);
+    return res.status(500).json({ error: fallback });
 }
 
 router.get('/kalendarium/:year', async (req, res) => {
@@ -31,37 +38,10 @@ router.get('/kalendarium/:year', async (req, res) => {
         return res.status(400).json({ error: 'Ugyldigt år' });
     }
 
-    if (kalendariumCache.has(year)) {
-        return res.json(kalendariumCache.get(year));
-    }
-
     try {
-        const data = await fetchKalendarium(`https://api.kalendarium.dk/CalendarList/${year}`);
-
-        const holidays = data
-            .filter(d => d.holliday === 'True' || d.merke === 'True')
-            .map(d => ({
-                date: d.date,
-                formattedDate: d.formattedDate,
-                name: d.danishShort,
-                fullName: d.danishLong,
-                isPublicHoliday: d.holliday === 'True',
-                isChurch: d.kirke === 'True',
-                isNotable: d.merke === 'True',
-                wikiLink: d.wikiLink ? `https://da.wikipedia.org/wiki/${d.wikiLink}` : null,
-            }))
-            .reduce((acc, item) => {
-                const existing = acc.find(a => a.date === item.date && a.name === item.name);
-                if (!existing) acc.push(item);
-                return acc;
-            }, [])
-            .sort((a, b) => a.date.localeCompare(b.date));
-
-        kalendariumCache.set(year, holidays);
-        res.json(holidays);
+        res.json(await getHolidayCalendar(year, { refresh: req.query.refresh === 'true' }));
     } catch (error) {
-        console.error('Fejl ved hentning fra Kalendarium API:', error);
-        res.status(502).json({ error: 'Kunne ikke hente data fra Kalendarium API' });
+        handleError(res, error, 'Kunne ikke hente helligdagskalender');
     }
 });
 
@@ -77,16 +57,10 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/holidays — opret ny
-router.post('/', (req, res) => {
+router.post('/', requirePermission(PERMISSIONS.MANAGE_HOLIDAYS), (req, res) => {
     try {
-        const { date, name, all_day = 1, start_time, end_time, recurring = 0 } = req.body;
-
-        if (!date || !name) {
-            return res.status(400).json({ error: 'Dato og navn er påkrævet' });
-        }
-        if (name.length > 20) {
-            return res.status(400).json({ error: 'Navn må maks. være 20 tegn' });
-        }
+        const { date, all_day = 1, start_time, end_time, recurring = 0 } = req.body;
+        const name = validateHoliday({ ...req.body, all_day });
 
         const result = db.prepare(`
             INSERT INTO custom_holidays (date, name, all_day, start_time, end_time, recurring)
@@ -96,22 +70,26 @@ router.post('/', (req, res) => {
         const holiday = db.prepare('SELECT * FROM custom_holidays WHERE id = ?').get(result.lastInsertRowid);
         res.status(201).json(holiday);
     } catch (error) {
-        console.error('Fejl ved oprettelse af helligdag:', error);
-        res.status(500).json({ error: 'Kunne ikke oprette helligdag' });
+        handleError(res, error, 'Kunne ikke oprette helligdag');
     }
 });
 
 // PUT /api/holidays/:id — rediger
-router.put('/:id', (req, res) => {
+router.put('/:id', requirePermission(PERMISSIONS.MANAGE_HOLIDAYS), (req, res) => {
     try {
         const { date, name, all_day, start_time, end_time, recurring } = req.body;
         const existing = db.prepare('SELECT * FROM custom_holidays WHERE id = ?').get(req.params.id);
         if (!existing) {
             return res.status(404).json({ error: 'Helligdag ikke fundet' });
         }
-        if (name && name.length > 20) {
-            return res.status(400).json({ error: 'Navn må maks. være 20 tegn' });
-        }
+        const nextHoliday = {
+            date: date || existing.date,
+            name: name ?? existing.name,
+            all_day: all_day != null ? Boolean(all_day) : Boolean(existing.all_day),
+            start_time: start_time ?? existing.start_time,
+            end_time: end_time ?? existing.end_time
+        };
+        const validatedName = validateHoliday(nextHoliday);
 
         db.prepare(`
             UPDATE custom_holidays SET
@@ -123,9 +101,11 @@ router.put('/:id', (req, res) => {
                 recurring = COALESCE(?, recurring)
             WHERE id = ?
         `).run(
-            date || null, name || null, all_day != null ? (all_day ? 1 : 0) : null,
-            all_day ? null : (start_time || existing.start_time),
-            all_day ? null : (end_time || existing.end_time),
+            nextHoliday.date,
+            validatedName,
+            nextHoliday.all_day ? 1 : 0,
+            nextHoliday.all_day ? null : nextHoliday.start_time,
+            nextHoliday.all_day ? null : nextHoliday.end_time,
             recurring != null ? (recurring ? 1 : 0) : null,
             req.params.id
         );
@@ -133,13 +113,12 @@ router.put('/:id', (req, res) => {
         const updated = db.prepare('SELECT * FROM custom_holidays WHERE id = ?').get(req.params.id);
         res.json(updated);
     } catch (error) {
-        console.error('Fejl ved opdatering af helligdag:', error);
-        res.status(500).json({ error: 'Kunne ikke opdatere helligdag' });
+        handleError(res, error, 'Kunne ikke opdatere helligdag');
     }
 });
 
 // DELETE /api/holidays/:id — slet
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requirePermission(PERMISSIONS.MANAGE_HOLIDAYS), (req, res) => {
     try {
         const existing = db.prepare('SELECT * FROM custom_holidays WHERE id = ?').get(req.params.id);
         if (!existing) {

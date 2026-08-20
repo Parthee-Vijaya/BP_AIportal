@@ -59,7 +59,7 @@ NPM workspaces monorepo: `frontend/` and `backend/` as workspaces.
 - **Times round up** to nearest 15 minutes
 - **Grants are per child**, not per caregiver; both pending and approved entries count toward usage
 - **Month intervals** are configurable (e.g. 16th-15th) with history tracking and no retroactive changes
-- **MA-numbers** are unique identifiers for caregivers, zero-padded to 5 digits
+- **MA-numbers** are unique identifiers for caregivers, zero-padded to 8 digits
 
 ### Database Tables
 

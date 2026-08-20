@@ -6,15 +6,18 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "recalculate:time-entries": "node scripts/recalculate-time-entries.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
-    "cors": "^2.8.5",
-    "express": "^4.21.2",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
     "json2csv": "^6.0.0-alpha.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.17.0 <23"
   }
 }

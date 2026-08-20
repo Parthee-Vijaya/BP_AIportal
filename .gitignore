@@ -1,4 +1,8 @@
 node_modules/
+.npm-cache/
 frontend/dist/
 *.log
 .DS_Store
+backend/src/db/*.sqlite-wal
+backend/src/db/*.sqlite-shm
+backend/src/db/*.sqlite-journal

@@ -1,229 +1,90 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { timeEntriesApi, childrenApi, caregiversApi } from '../../utils/api';
-import { formatHours, formatDate } from '../../utils/helpers';
+import { caregiversApi, childrenApi, timeEntriesApi } from '../../utils/api';
+import { formatDate, formatHours } from '../../utils/helpers';
 
-// Icons
-const ClockIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-);
+const ArrowIcon = () => <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>;
 
-const CheckIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-);
-
-const UserIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-    </svg>
-);
-
-const UsersIcon = () => (
-    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-    </svg>
-);
-
-const ArrowIcon = () => (
-    <svg className="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-);
-
-export default function AdminDashboard() {
-    const [stats, setStats] = useState({
-        pendingCount: 0,
-        approvedToday: 0,
-        childrenCount: 0,
-        caregiversCount: 0
-    });
-    const [loading, setLoading] = useState(true);
+export default function AdminDashboard({ permissions = [] }) {
+    const canManageChildren = permissions.includes('manage_children');
+    const canManageCaregivers = permissions.includes('manage_caregivers');
+    const canExportReports = permissions.includes('export_reports');
+    const [stats, setStats] = useState({ pendingCount: 0, pendingHours: 0, exceededCount: 0, approvedToday: 0, childrenCount: 0, caregiversCount: 0 });
     const [recentPending, setRecentPending] = useState([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        async function loadData() {
+            try {
+                const [entries, children, caregivers] = await Promise.all([timeEntriesApi.getAll(), childrenApi.getAll(), caregiversApi.getAll()]);
+                const pending = entries.filter(entry => entry.status === 'pending');
+                const today = new Date().toISOString().split('T')[0];
+                setStats({
+                    pendingCount: pending.length,
+                    pendingHours: pending.reduce((sum, entry) => sum + Number(entry.total_hours || 0), 0),
+                    exceededCount: pending.filter(entry => entry.grant_exceeded || entry.grantExceeded || entry.grant_status?.exceeded).length,
+                    approvedToday: entries.filter(entry => entry.status === 'approved' && entry.reviewed_at?.startsWith(today)).length,
+                    childrenCount: children.length,
+                    caregiversCount: caregivers.length
+                });
+                setRecentPending(pending.slice(0, 7));
+            } catch (error) {
+                console.error('Fejl ved indlæsning:', error);
+            } finally {
+                setLoading(false);
+            }
+        }
         loadData();
     }, []);
 
-    async function loadData() {
-        try {
-            const [entries, children, caregivers] = await Promise.all([
-                timeEntriesApi.getAll(),
-                childrenApi.getAll(),
-                caregiversApi.getAll()
-            ]);
-
-            const pending = entries.filter(e => e.status === 'pending');
-            const today = new Date().toISOString().split('T')[0];
-            const approvedToday = entries.filter(
-                e => e.status === 'approved' &&
-                e.reviewed_at &&
-                e.reviewed_at.startsWith(today)
-            ).length;
-
-            setStats({
-                pendingCount: pending.length,
-                approvedToday,
-                childrenCount: children.length,
-                caregiversCount: caregivers.length
-            });
-
-            setRecentPending(pending.slice(0, 5));
-        } catch (error) {
-            console.error('Fejl ved indlæsning:', error);
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-10 w-10 border-2 border-white/30 border-t-[#B54A32]"></div>
-            </div>
-        );
-    }
+    if (loading) return <div className="py-16 text-center text-sm text-slate-600">Indlæser overblik…</div>;
 
     return (
-        <div className="space-y-8">
-            {/* Header */}
-            <div className="glass-card rounded-2xl p-6 animate-fade-in-up">
-                <h2 className="text-2xl font-bold text-gray-900">Oversigt</h2>
-                <p className="text-gray-500 mt-1">Overblik over timeregistreringer og stamdata</p>
-            </div>
+        <div>
+            <header className="page-heading !mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div><div className="eyebrow">Godkender</div><h1>Overblik</h1><p>Samlet status for indberettede timer og dagens godkendelsesarbejde.</p></div>
+                <Link to="/godkender/godkendelse" className="btn-primary px-5">Gå til godkendelse</Link>
+            </header>
 
-            {/* Stats cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Link
-                    to="/admin/godkendelse"
-                    className="glass-card rounded-2xl p-6 hover-lift group cursor-pointer"
-                    style={{ animationDelay: '0.1s' }}
-                >
-                    <div className="flex items-center justify-between">
-                        <div className="w-14 h-14 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-500/30">
-                            <ClockIcon />
-                        </div>
-                        <div className="text-gray-400 group-hover:text-[#B54A32] transition-colors">
-                            <ArrowIcon />
-                        </div>
-                    </div>
-                    <div className="mt-5">
-                        <div className="text-4xl font-bold text-gray-900">{stats.pendingCount}</div>
-                        <div className="text-sm text-gray-500 mt-1 font-medium">Afventer godkendelse</div>
-                    </div>
-                </Link>
+            <section className="metric-strip mb-5" aria-label="Nøgletal">
+                <div className="metric"><div className="metric-label">Afventer godkendelse</div><div className="metric-value">{stats.pendingCount}</div><div className="metric-note">Registreringer klar til behandling</div></div>
+                <div className="metric"><div className="metric-label">Timer til godkendelse</div><div className="metric-value">{formatHours(stats.pendingHours)}</div><div className="metric-note">Samlet i den åbne kø</div></div>
+                <div className="metric"><div className="metric-label">Kræver opmærksomhed</div><div className="metric-value">{stats.exceededCount}</div><div className="metric-note">Markeret med bevillingsadvarsel</div></div>
+                <div className="metric"><div className="metric-label">Godkendt i dag</div><div className="metric-value">{stats.approvedToday}</div><div className="metric-note">Afsluttede registreringer</div></div>
+            </section>
 
-                <div
-                    className="glass-card rounded-2xl p-6 animate-fade-in-up"
-                    style={{ animationDelay: '0.2s' }}
-                >
-                    <div className="w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/30">
-                        <CheckIcon />
-                    </div>
-                    <div className="mt-5">
-                        <div className="text-4xl font-bold text-gray-900">{stats.approvedToday}</div>
-                        <div className="text-sm text-gray-500 mt-1 font-medium">Godkendt i dag</div>
-                    </div>
-                </div>
+            {(canExportReports || canManageChildren || canManageCaregivers) && (
+                <nav className="surface mb-5 flex flex-col overflow-hidden rounded-lg sm:flex-row" aria-label="Administration og stamdata">
+                    {canExportReports && <Link to="/godkender/rapporter" className="flex min-h-14 flex-1 items-center justify-between border-b border-stone-200 px-4 text-sm font-bold text-[#823322] sm:border-b-0 sm:border-r"><span>Rapportdashboard <span className="ml-2 font-normal text-slate-500">Excel og filtrering</span></span><ArrowIcon /></Link>}
+                    {canManageChildren && <Link to="/godkender/boern" className="flex min-h-14 flex-1 items-center justify-between border-b border-stone-200 px-4 text-sm font-bold text-[#823322] sm:border-b-0 sm:border-r"><span>Børn og bevillinger <span className="ml-2 font-normal text-slate-500">{stats.childrenCount} børn</span></span><ArrowIcon /></Link>}
+                    {canManageCaregivers && <Link to="/godkender/barnepiger" className="flex min-h-14 flex-1 items-center justify-between px-4 text-sm font-bold text-[#823322]"><span>Barnepiger <span className="ml-2 font-normal text-slate-500">{stats.caregiversCount} personer</span></span><ArrowIcon /></Link>}
+                </nav>
+            )}
 
-                <Link
-                    to="/admin/boern"
-                    className="glass-card rounded-2xl p-6 hover-lift group cursor-pointer animate-fade-in-up"
-                    style={{ animationDelay: '0.3s' }}
-                >
-                    <div className="flex items-center justify-between">
-                        <div className="w-14 h-14 bg-gradient-to-br from-[#B54A32] to-[#9a3f2b] rounded-xl flex items-center justify-center text-white shadow-lg shadow-[#B54A32]/30">
-                            <UserIcon />
-                        </div>
-                        <div className="text-gray-400 group-hover:text-[#B54A32] transition-colors">
-                            <ArrowIcon />
-                        </div>
-                    </div>
-                    <div className="mt-5">
-                        <div className="text-4xl font-bold text-gray-900">{stats.childrenCount}</div>
-                        <div className="text-sm text-gray-500 mt-1 font-medium">Børn</div>
-                    </div>
-                </Link>
-
-                <Link
-                    to="/admin/barnepiger"
-                    className="glass-card rounded-2xl p-6 hover-lift group cursor-pointer animate-fade-in-up"
-                    style={{ animationDelay: '0.4s' }}
-                >
-                    <div className="flex items-center justify-between">
-                        <div className="w-14 h-14 bg-gradient-to-br from-violet-400 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-violet-500/30">
-                            <UsersIcon />
-                        </div>
-                        <div className="text-gray-400 group-hover:text-[#B54A32] transition-colors">
-                            <ArrowIcon />
-                        </div>
-                    </div>
-                    <div className="mt-5">
-                        <div className="text-4xl font-bold text-gray-900">{stats.caregiversCount}</div>
-                        <div className="text-sm text-gray-500 mt-1 font-medium">Barnepiger</div>
-                    </div>
-                </Link>
-            </div>
-
-            {/* Recent pending */}
-            {recentPending.length > 0 && (
-                <div className="glass-card rounded-2xl overflow-hidden animate-fade-in-up" style={{ animationDelay: '0.5s' }}>
-                    <div className="px-6 py-5 border-b border-white/20">
-                        <h3 className="font-semibold text-gray-900 text-lg">Seneste afventende registreringer</h3>
-                    </div>
-                    <div className="divide-y divide-white/10">
-                        {recentPending.map((entry, index) => (
-                            <div
-                                key={entry.id}
-                                className="px-6 py-4 flex items-center justify-between hover:bg-white/30 transition-all duration-200"
-                                style={{ animationDelay: `${0.6 + index * 0.1}s` }}
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center text-gray-600 text-sm font-bold shadow-inner">
-                                        {entry.caregiver_first_name?.charAt(0)}{entry.caregiver_last_name?.charAt(0)}
-                                    </div>
-                                    <div>
-                                        <div className="font-semibold text-gray-900">
-                                            {entry.caregiver_first_name} {entry.caregiver_last_name}
-                                        </div>
-                                        <div className="text-sm text-gray-500">
-                                            {entry.child_first_name} {entry.child_last_name}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <div className="font-bold text-gray-900 text-lg">{formatHours(entry.total_hours)} timer</div>
-                                    <div className="text-sm text-gray-500">
-                                        {formatDate(entry.date)} &middot; {entry.start_time}-{entry.end_time}
-                                    </div>
-                                </div>
+            <div>
+                <section className="surface min-w-0 overflow-hidden rounded-lg">
+                    <header className="flex items-center justify-between border-b border-stone-200 px-5 py-3.5"><div><h2 className="text-lg font-bold">Seneste afventende</h2><p className="mt-0.5 text-sm text-slate-500">De nyeste registreringer i køen</p></div><Link to="/godkender/godkendelse" className="inline-flex items-center gap-2 text-sm font-bold text-[#823322]">Se alle <ArrowIcon /></Link></header>
+                    {recentPending.length === 0 ? <div className="p-10 text-center"><h3 className="font-bold">Ingen afventende registreringer</h3><p className="mt-1 text-sm text-slate-500">Alle registreringer er behandlet.</p></div> : (
+                        <div className="divide-y divide-stone-200">
+                            <div className="hidden grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_minmax(200px,1.15fr)_80px] gap-5 bg-stone-50 px-5 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500 sm:grid">
+                                <div>Barnepige</div>
+                                <div>Barn</div>
+                                <div>Dato og tidsrum</div>
+                                <div className="text-right">Timer</div>
                             </div>
-                        ))}
-                    </div>
-                    <div className="px-6 py-4 border-t border-white/20 bg-white/20">
-                        <Link
-                            to="/admin/godkendelse"
-                            className="inline-flex items-center gap-2 text-[#B54A32] hover:text-[#9a3f2b] text-sm font-semibold group transition-colors"
-                        >
-                            Se alle afventende
-                            <ArrowIcon />
-                        </Link>
-                    </div>
-                </div>
-            )}
+                            {recentPending.map(entry => (
+                                <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-5 py-3 sm:grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_minmax(200px,1.15fr)_80px] sm:gap-5">
+                                    <div className="font-bold">{entry.caregiver_first_name} {entry.caregiver_last_name}</div>
+                                    <div className="text-sm text-slate-700">{entry.child_first_name} {entry.child_last_name}</div>
+                                    <div className="col-start-1 text-xs text-slate-500 sm:col-auto sm:text-sm">{formatDate(entry.date)} · {entry.start_time?.slice(0,5)}–{entry.end_time?.slice(0,5)}</div>
+                                    <div className="row-span-2 row-start-1 text-right text-lg font-bold tabular-nums sm:row-auto">{formatHours(entry.total_hours)}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
 
-            {recentPending.length === 0 && (
-                <div className="glass-card rounded-2xl p-12 text-center animate-fade-in-up" style={{ animationDelay: '0.5s' }}>
-                    <div className="w-20 h-20 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-emerald-500/30">
-                        <CheckIcon />
-                    </div>
-                    <h3 className="text-xl font-semibold text-gray-900">Ingen afventende registreringer</h3>
-                    <p className="text-gray-500 mt-2">Alle registreringer er blevet behandlet</p>
-                </div>
-            )}
+            </div>
         </div>
     );
 }

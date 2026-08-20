@@ -1,21 +1,18 @@
 // Large demo data script - 5x more data
-import Database from 'better-sqlite3';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import db, { initializeDatabase } from './src/db/database.js';
+import { ALLOWANCE_CALCULATION_VERSION, calculateAllowances } from './src/services/allowanceCalculator.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const db = Database(join(__dirname, 'src/db/database.sqlite'));
+initializeDatabase();
 
 console.log('Opretter stor mængde demo data...\n');
 
 // Ryd eksisterende data og nulstil ID-tællere
+db.exec('DELETE FROM time_entry_audit');
 db.exec('DELETE FROM time_entries');
 db.exec('DELETE FROM child_caregiver');
 db.exec('DELETE FROM children');
 db.exec('DELETE FROM caregivers');
-db.exec("DELETE FROM sqlite_sequence WHERE name IN ('caregivers', 'children', 'time_entries')");
+db.exec("DELETE FROM sqlite_sequence WHERE name IN ('caregivers', 'children', 'time_entries', 'time_entry_audit')");
 console.log('Eksisterende data slettet\n');
 
 // Danske navne
@@ -33,7 +30,7 @@ const caregiverCount = 15;
 for (let i = 0; i < caregiverCount; i++) {
     const firstName = firstNames[i % firstNames.length];
     const lastName = lastNames[i % lastNames.length];
-    const maNumber = `MA-${String(i + 1).padStart(3, '0')}`;
+    const maNumber = String(i + 1).padStart(8, '0');
     insertCaregiver.run(firstName, lastName, maNumber);
     console.log(`Barnepige oprettet: ${firstName} ${lastName} (${maNumber})`);
 }
@@ -123,8 +120,8 @@ const insertEntry = db.prepare(`
     INSERT INTO time_entries (
         caregiver_id, child_id, date, start_time, end_time,
         normal_hours, evening_hours, night_hours, saturday_hours, sunday_holiday_hours,
-        total_hours, comment, status, reviewed_by, reviewed_at, payroll_registered, payroll_date, rejection_reason
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_hours, calculation_version, comment, status, reviewed_by, reviewed_at, payroll_registered, payroll_date, rejection_reason
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const statuses = ['pending', 'pending', 'pending', 'approved', 'approved', 'rejected'];
@@ -179,26 +176,7 @@ for (let i = 0; i < entryCount; i++) {
     const dateStr = date.toISOString().split('T')[0];
 
     const slot = timeSlots[i % timeSlots.length];
-    const dayOfWeek = date.getDay();
-
-    // Juster timer baseret på ugedag
-    let normal = slot.normal;
-    let evening = slot.evening;
-    let night = slot.night;
-    let saturday = 0;
-    let sunday = 0;
-
-    if (dayOfWeek === 6) { // Lørdag
-        saturday = normal + evening;
-        normal = 0;
-        evening = 0;
-    } else if (dayOfWeek === 0) { // Søndag
-        sunday = normal + evening;
-        normal = 0;
-        evening = 0;
-    }
-
-    const totalHours = normal + evening + night + saturday + sunday;
+    const allowances = calculateAllowances(dateStr, slot.start, slot.end);
     const status = statuses[i % statuses.length];
     const comment = comments[i % comments.length];
 
@@ -232,8 +210,9 @@ for (let i = 0; i < entryCount; i++) {
     insertEntry.run(
         caregiverId, childId,
         dateStr, slot.start, slot.end,
-        normal, evening, night, saturday, sunday,
-        totalHours, comment, status,
+        allowances.normal_hours, allowances.evening_hours, allowances.night_hours,
+        allowances.saturday_hours, allowances.sunday_holiday_hours,
+        allowances.total_hours, ALLOWANCE_CALCULATION_VERSION, comment, status,
         reviewedBy, reviewedAt, payrollRegistered, payrollDate, rejectionReason
     );
 }

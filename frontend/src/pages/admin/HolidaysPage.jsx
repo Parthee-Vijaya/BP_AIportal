@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { holidaysApi } from '../../utils/api';
 import { formatDate } from '../../utils/helpers';
+import DialogShell from '../../components/DialogShell';
 
 const PlusIcon = () => (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -78,6 +79,7 @@ export default function HolidaysPage() {
     const [loadingKalendarium, setLoadingKalendarium] = useState(true);
     const [loadingCustom, setLoadingCustom] = useState(true);
     const [kalendariumError, setKalendariumError] = useState(null);
+    const [kalendariumSource, setKalendariumSource] = useState('kalendarium');
     const [activeTab, setActiveTab] = useState('official');
     const [modal, setModal] = useState({ open: false, holiday: null });
     const [formData, setFormData] = useState({ date: '', name: '', all_day: true, start_time: '', end_time: '', recurring: false });
@@ -96,6 +98,7 @@ export default function HolidaysPage() {
         try {
             const data = await holidaysApi.getKalendarium(year);
             setKalendariumHolidays(data);
+            setKalendariumSource(data.some(holiday => holiday.source === 'local-fallback') ? 'local-fallback' : 'kalendarium');
         } catch (e) {
             console.error('Fejl ved Kalendarium:', e);
             setKalendariumError('Kunne ikke hente officielle helligdage');
@@ -174,23 +177,25 @@ export default function HolidaysPage() {
     return (
         <div className="space-y-4">
             {/* Header */}
-            <div className="bg-white rounded-xl px-4 py-2.5 shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-base font-bold text-gray-900">Helligdage</h2>
+            <div className="page-heading mb-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="eyebrow">Administration</div>
+                        <h1>Helligdage</h1>
+                        <p>Kontrollér kalendergrundlaget for timeberegningen.</p>
                         <div className="flex items-center gap-1.5">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100">
+                            <span className="inline-flex items-center border-r border-stone-300 pr-2 text-xs font-medium text-slate-700">
                                 {officialCount} helligdage
                             </span>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                            <span className="inline-flex items-center border-r border-stone-300 pr-2 text-xs font-medium text-slate-700">
                                 {notableCount} mærkedage
                             </span>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-100">
+                            <span className="inline-flex items-center text-xs font-medium text-slate-700">
                                 {customCount} brugerdefinerede
                             </span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                         {/* Year selector */}
                         <div className="flex items-center gap-1 bg-gray-50 rounded-lg border border-gray-200 px-1 py-0.5">
                             <button
@@ -214,13 +219,23 @@ export default function HolidaysPage() {
 
                         <button
                             onClick={openCreate}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#B54A32] to-[#9a3f2b] text-white rounded-lg text-xs font-medium shadow-md hover:shadow-lg transition-all"
+                            className="btn-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium"
                         >
                             <PlusIcon />
                             Tilføj helligdag
                         </button>
                     </div>
                 </div>
+            </div>
+
+            <div className={`rounded-xl border px-4 py-3 text-sm ${kalendariumSource === 'local-fallback' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">
+                <strong>Datakilde:</strong> {kalendariumSource === 'local-fallback'
+                    ? 'Lokal beregning anvendes, fordi Kalendarium ikke kunne kontaktes. Timer beregnes fortsat efter samme lokale kalendergrundlag.'
+                    : 'Kalendarium.dk. Data er hentet og kontrolleret for det valgte år.'}
+            </div>
+
+            <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                Kun røde, officielle helligdage påvirker den automatiske timeberegning. Mærkedage er kun information; lokale dage oprettes under <strong>Brugerdefinerede</strong>.
             </div>
 
             {/* Next holiday banner */}
@@ -254,7 +269,7 @@ export default function HolidaysPage() {
                         }`}
                     >
                         <GlobeIcon />
-                        Officielle helligdage
+                        Kalendarium
                         <span className={`px-1.5 py-0.5 rounded-full text-xs ${
                             activeTab === 'official' ? 'bg-[#B54A32]/10 text-[#B54A32]' : 'bg-gray-200 text-gray-500'
                         }`}>
@@ -299,7 +314,7 @@ export default function HolidaysPage() {
                                 </button>
                             </div>
                         ) : (
-                            <table className="w-full">
+                            <table className="responsive-table">
                                 <thead>
                                     <tr className="sticky top-[124px] z-10">
                                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200 w-36">Dato</th>
@@ -323,17 +338,17 @@ export default function HolidaysPage() {
                                                             : 'hover:bg-gray-50'
                                                 }`}
                                             >
-                                                <td className="px-4 py-3">
+                                                <td data-label="Dato" className="px-4 py-3">
                                                     <span className={`text-sm font-medium ${today ? 'text-amber-800' : 'text-gray-900'}`}>
                                                         {formatDanishDate(h.date)}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td data-label="Dag" className="px-4 py-3">
                                                     <span className={`text-sm capitalize ${today ? 'text-amber-700' : 'text-gray-600'}`}>
                                                         {getDayName(h.date)}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td data-label="Navn" className="px-4 py-3">
                                                     <div className="flex items-center gap-2">
                                                         <span className={`text-sm font-medium ${today ? 'text-amber-900' : 'text-gray-900'}`}>
                                                             {h.name || h.fullName}
@@ -358,7 +373,7 @@ export default function HolidaysPage() {
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td data-label="Type" className="px-4 py-3">
                                                     {h.isPublicHoliday ? (
                                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100">
                                                             Helligdag
@@ -412,7 +427,7 @@ export default function HolidaysPage() {
                                 </button>
                             </div>
                         ) : (
-                            <table className="w-full">
+                            <table className="responsive-table">
                                 <thead>
                                     <tr className="sticky top-[124px] z-10">
                                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200">Dato</th>
@@ -425,13 +440,13 @@ export default function HolidaysPage() {
                                 <tbody className="divide-y divide-gray-100">
                                     {customHolidays.map(h => (
                                         <tr key={h.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="px-4 py-3">
+                                            <td data-label="Dato" className="px-4 py-3">
                                                 <span className="text-sm font-medium text-gray-900">{formatDate(h.date)}</span>
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td data-label="Navn" className="px-4 py-3">
                                                 <span className="text-sm text-gray-900">{h.name}</span>
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td data-label="Tidsrum" className="px-4 py-3">
                                                 <span className="text-sm text-gray-600">
                                                     {h.all_day ? (
                                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
@@ -444,7 +459,7 @@ export default function HolidaysPage() {
                                                     )}
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td data-label="Gentages" className="px-4 py-3">
                                                 {h.recurring ? (
                                                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
                                                         Årligt
@@ -453,7 +468,7 @@ export default function HolidaysPage() {
                                                     <span className="text-xs text-gray-400">Nej</span>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 text-right">
+                                            <td data-label="Handlinger" className="px-4 py-3 text-right">
                                                 <div className="inline-flex items-center gap-1">
                                                     <button
                                                         onClick={() => openEdit(h)}
@@ -482,25 +497,25 @@ export default function HolidaysPage() {
 
             {/* Modal */}
             {modal.open && (
-                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md border border-gray-200 animate-scale-in">
+                <DialogShell onClose={() => setModal({ open: false, holiday: null })} labelledBy="holiday-dialog-title" maxWidth="max-w-md" panelClassName="p-6">
                         <div className="flex items-center justify-between mb-5">
-                            <h3 className="text-lg font-bold text-gray-900">
+                            <h3 id="holiday-dialog-title" className="text-lg font-bold text-gray-900">
                                 {modal.holiday ? 'Rediger helligdag' : 'Tilføj helligdag'}
                             </h3>
-                            <button onClick={() => setModal({ open: false, holiday: null })} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all">
+                            <button type="button" aria-label="Luk dialog" onClick={() => setModal({ open: false, holiday: null })} className="min-h-11 min-w-11 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all">
                                 <CloseIcon />
                             </button>
                         </div>
 
-                        <p className="text-xs text-gray-400 mb-4 bg-gray-50 rounded-lg p-2.5 border border-gray-100">
-                            Felter: Dato (vælg dato i kalender). Navn på dag (fritekst maks 20 tegn). Tidsrum (hele dagen eller fra-til). Fast dato gentages (Ja/Nej).
+                        <p className="text-sm text-gray-600 mb-4 bg-gray-50 rounded-lg p-3 border border-gray-200">
+                            Opret en lokal lukke- eller helligdag. Vælg om den gælder hele dagen og om den skal gentages hvert år.
                         </p>
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Dato *</label>
+                                <label htmlFor="holiday-date" className="block text-sm font-semibold text-gray-700 mb-1">Dato *</label>
                                 <input
+                                    id="holiday-date"
                                     type="date"
                                     value={formData.date}
                                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
@@ -508,8 +523,9 @@ export default function HolidaysPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Navn på dag * <span className="font-normal text-gray-400">(maks 20 tegn)</span></label>
+                                <label htmlFor="holiday-name" className="block text-sm font-semibold text-gray-700 mb-1">Navn på dag * <span className="font-normal text-gray-500">(maks. 20 tegn)</span></label>
                                 <input
+                                    id="holiday-name"
                                     type="text"
                                     maxLength={20}
                                     value={formData.name}
@@ -536,8 +552,9 @@ export default function HolidaysPage() {
                                 {!formData.all_day && (
                                     <div className="grid grid-cols-2 gap-3 mt-3 pl-8">
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-1">Fra</label>
+                                            <label htmlFor="holiday-start" className="block text-xs font-medium text-gray-600 mb-1">Fra</label>
                                             <input
+                                                id="holiday-start"
                                                 type="time"
                                                 value={formData.start_time}
                                                 onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
@@ -545,8 +562,9 @@ export default function HolidaysPage() {
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-1">Til</label>
+                                            <label htmlFor="holiday-end" className="block text-xs font-medium text-gray-600 mb-1">Til</label>
                                             <input
+                                                id="holiday-end"
                                                 type="time"
                                                 value={formData.end_time}
                                                 onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
@@ -564,7 +582,7 @@ export default function HolidaysPage() {
                                         onChange={(e) => setFormData({ ...formData, recurring: e.target.checked })}
                                         className="rounded border-gray-300 text-[#B54A32] focus:ring-[#B54A32]"
                                     />
-                                    <span className="text-sm font-medium text-gray-700">Fast dato (gentages årligt)</span>
+                                    <span className="text-sm font-medium text-gray-700">Gentag hvert år</span>
                                 </label>
                             </div>
                         </div>
@@ -583,8 +601,7 @@ export default function HolidaysPage() {
                                 Annuller
                             </button>
                         </div>
-                    </div>
-                </div>
+                </DialogShell>
             )}
         </div>
     );

@@ -1,214 +1,107 @@
-import { useState, useEffect } from 'react';
-import { timeEntriesApi } from '../../utils/api';
+import { useEffect, useState } from 'react';
 import StatusBadge from '../../components/StatusBadge';
+import { timeEntriesApi } from '../../utils/api';
 import { formatDate, formatHours } from '../../utils/helpers';
 
-// Icons
-const ClockIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-);
+const Icon = ({ type }) => {
+    const path = type === 'pending'
+        ? 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'
+        : type === 'approved'
+            ? 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'
+            : 'M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z';
+    return <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={path} /></svg>;
+};
 
-const CheckIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-);
+const TABS = [
+    { id: 'pending', label: 'Afventer' },
+    { id: 'approved', label: 'Godkendt' },
+    { id: 'rejected', label: 'Afvist' }
+];
 
-const XIcon = () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-);
-
-const DocumentIcon = () => (
-    <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-);
+const BREAKDOWN = [
+    ['Normal', 'normal_hours'],
+    ['Aften', 'evening_hours'],
+    ['Nat', 'night_hours'],
+    ['Lørdag', 'saturday_hours'],
+    ['Søn/helligdag', 'sunday_holiday_hours']
+];
 
 export default function MyTimeEntries({ caregiverId = 1 }) {
     const [entries, setEntries] = useState([]);
     const [activeTab, setActiveTab] = useState('pending');
     const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [grantFilter, setGrantFilter] = useState('all');
 
     useEffect(() => {
-        loadEntries();
+        setLoading(true);
+        timeEntriesApi.getAll({ caregiver_id: caregiverId, status: activeTab })
+            .then(setEntries)
+            .catch(error => console.error('Fejl ved indlæsning:', error))
+            .finally(() => setLoading(false));
     }, [activeTab, caregiverId]);
 
-    async function loadEntries() {
-        setLoading(true);
-        try {
-            const data = await timeEntriesApi.getAll({
-                caregiver_id: caregiverId,
-                status: activeTab
-            });
-            setEntries(data);
-        } catch (error) {
-            console.error('Fejl ved indlæsning:', error);
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    const tabs = [
-        { id: 'pending', label: 'Afventer', icon: <ClockIcon />, color: 'amber' },
-        { id: 'approved', label: 'Godkendt', icon: <CheckIcon />, color: 'emerald' },
-        { id: 'rejected', label: 'Afvist', icon: <XIcon />, color: 'rose' }
-    ];
+    const displayedEntries = entries.filter(entry => {
+        const query = searchQuery.trim().toLowerCase();
+        const haystack = `${entry.child_first_name} ${entry.child_last_name}`.toLowerCase();
+        return (!query || haystack.includes(query)) && (grantFilter === 'all' || entry.grant_source === grantFilter);
+    });
+    const totalHours = displayedEntries.reduce((sum, entry) => sum + Number(entry.total_hours || 0), 0);
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="glass-card rounded-2xl p-6 animate-fade-in-up">
-                <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-gradient-to-br from-[#B54A32] to-[#9a3f2b] rounded-xl flex items-center justify-center text-white shadow-lg shadow-[#B54A32]/30">
-                        <ClockIcon />
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900">Mine registreringer</h2>
-                        <p className="text-gray-500 mt-0.5">Se status på dine indberettede timer</p>
-                    </div>
-                </div>
-            </div>
+        <div>
+            <header className="page-heading">
+                <div className="eyebrow">Barnepige</div>
+                <h1>Mine timer</h1>
+                <p>Se dine indberettede timer, beregningen og den aktuelle status.</p>
+            </header>
 
-            {/* Tabs */}
-            <div className="glass-card rounded-2xl overflow-hidden animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-                <div className="border-b border-white/20 flex bg-white/30">
-                    {tabs.map((tab) => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-2 px-6 py-4 text-sm font-semibold border-b-2 transition-all ${
-                                activeTab === tab.id
-                                    ? 'border-[#B54A32] text-[#B54A32] bg-white/50'
-                                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-white/30'
-                            }`}
-                        >
-                            <span className={activeTab === tab.id ? 'text-[#B54A32]' : 'text-gray-400'}>
-                                {tab.icon}
-                            </span>
-                            {tab.label}
+            <section className="surface overflow-hidden rounded-lg">
+                <div className="flex overflow-x-auto border-b border-stone-200" role="tablist" aria-label="Registreringsstatus">
+                    {TABS.map(tab => (
+                        <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} className={`relative flex min-h-14 min-w-fit flex-1 items-center justify-center gap-2 px-5 text-sm font-bold ${activeTab === tab.id ? 'text-[#823322]' : 'text-slate-500 hover:bg-stone-50 hover:text-slate-800'}`}>
+                            <Icon type={tab.id} />{tab.label}
+                            {activeTab === tab.id && <span className="absolute inset-x-0 bottom-0 h-[3px] bg-[#A6402C]" />}
                         </button>
                     ))}
                 </div>
 
-                {loading ? (
-                    <div className="p-12 text-center">
-                        <div className="animate-spin rounded-full h-10 w-10 border-2 border-white/30 border-t-[#B54A32] mx-auto"></div>
-                        <p className="text-gray-500 mt-4">Indlæser...</p>
-                    </div>
-                ) : entries.length === 0 ? (
-                    <div className="p-12 text-center">
-                        <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl flex items-center justify-center mx-auto mb-5 text-gray-400 shadow-inner">
-                            <DocumentIcon />
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-900">Ingen registreringer</h3>
-                        <p className="text-gray-500 mt-1">Ingen registreringer i denne kategori</p>
-                    </div>
+                <div className="grid gap-3 border-b border-stone-200 bg-[#fbfaf8] p-4 sm:grid-cols-[1fr_220px_auto] sm:items-center">
+                    <div><label htmlFor="entry-search" className="sr-only">Søg efter barn</label><input id="entry-search" type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="Søg navn" className="glass-input w-full rounded-md px-3 text-sm" /></div>
+                    <div><label htmlFor="entry-grant-filter" className="sr-only">Filtrer efter bevilling</label><select id="entry-grant-filter" value={grantFilter} onChange={event => setGrantFilter(event.target.value)} className="glass-input w-full rounded-md px-3 text-sm"><option value="all">Alle bevillinger</option><option value="normal">Normal bevilling</option><option value="frame">Rammebevilling</option></select></div>
+                    <div className="text-sm text-slate-600"><strong className="text-slate-900">{displayedEntries.length}</strong> registreringer · <strong className="text-slate-900">{formatHours(totalHours)}</strong> timer</div>
+                </div>
+
+                {loading ? <div className="p-12 text-center text-sm text-slate-600">Indlæser registreringer…</div> : displayedEntries.length === 0 ? (
+                    <div className="p-12 text-center"><h2 className="text-lg font-bold">Ingen registreringer</h2><p className="mt-1 text-sm text-slate-500">Der er ingen registreringer med denne status og filtrering.</p></div>
                 ) : (
-                    <div className="divide-y divide-white/20">
-                        {entries.map((entry, index) => (
-                            <div
-                                key={entry.id}
-                                className="p-5 hover:bg-white/30 transition-all duration-200 animate-fade-in-up"
-                                style={{ animationDelay: `${0.2 + index * 0.05}s` }}
-                            >
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex items-start gap-4">
-                                        <div>
-                                            <div className="font-bold text-gray-900">
-                                                {entry.child_first_name} {entry.child_last_name}
-                                            </div>
-                                            <div className="text-sm text-gray-500 mt-1">
-                                                {formatDate(entry.date)} • {entry.start_time} - {entry.end_time}
-                                            </div>
-                                            {entry.comment && (
-                                                <div className="text-sm text-gray-500 mt-2 italic bg-white/30 px-3 py-1.5 rounded-lg border border-white/30">
-                                                    "{entry.comment}"
-                                                </div>
-                                            )}
-                                        </div>
+                    <div className="divide-y divide-stone-200">
+                        {displayedEntries.map(entry => (
+                            <article key={entry.id} className="p-4 sm:p-5">
+                                <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+                                    <div>
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><h2 className="text-base font-bold">{entry.child_first_name} {entry.child_last_name}</h2></div>
+                                        <p className="mt-1 text-sm text-slate-600">{formatDate(entry.date)} · {entry.start_time?.slice(0, 5)}–{entry.end_time?.slice(0, 5)} · {entry.grant_source === 'frame' ? 'Rammebevilling' : 'Normal bevilling'}</p>
                                     </div>
-
-                                    <div className="text-right flex-shrink-0">
-                                        <StatusBadge status={entry.status} />
-                                        <div className="text-xl font-bold text-gray-900 mt-2">
-                                            {formatHours(entry.total_hours)} timer
-                                        </div>
-                                    </div>
+                                    <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end"><StatusBadge status={entry.status} /><strong className="text-xl">{formatHours(entry.total_hours)} timer</strong></div>
                                 </div>
 
-                                {/* Timer breakdown */}
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                    {entry.normal_hours > 0 && (
-                                        <span className="text-xs px-2.5 py-1 bg-white/40 rounded-lg border border-white/30 text-gray-600">
-                                            Normal: {formatHours(entry.normal_hours)}
-                                        </span>
-                                    )}
-                                    {entry.evening_hours > 0 && (
-                                        <span className="text-xs px-2.5 py-1 bg-white/40 rounded-lg border border-white/30 text-gray-600">
-                                            Aften: {formatHours(entry.evening_hours)}
-                                        </span>
-                                    )}
-                                    {entry.night_hours > 0 && (
-                                        <span className="text-xs px-2.5 py-1 bg-white/40 rounded-lg border border-white/30 text-gray-600">
-                                            Nat: {formatHours(entry.night_hours)}
-                                        </span>
-                                    )}
-                                    {entry.saturday_hours > 0 && (
-                                        <span className="text-xs px-2.5 py-1 bg-white/40 rounded-lg border border-white/30 text-gray-600">
-                                            Lørdag: {formatHours(entry.saturday_hours)}
-                                        </span>
-                                    )}
-                                    {entry.sunday_holiday_hours > 0 && (
-                                        <span className="text-xs px-2.5 py-1 bg-white/40 rounded-lg border border-white/30 text-gray-600">
-                                            Søn/Hellig: {formatHours(entry.sunday_holiday_hours)}
-                                        </span>
-                                    )}
-                                </div>
+                                <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-stone-200 pt-3 text-xs">
+                                    {BREAKDOWN.filter(([, key]) => Number(entry[key]) > 0).map(([label, key]) => <div key={key}><dt className="inline text-slate-500">{label}: </dt><dd className="inline font-bold text-slate-800">{formatHours(entry[key])}</dd></div>)}
+                                </dl>
 
-                                {/* Rejection reason */}
+                                {entry.comment && <div className="mt-3 border-l-2 border-stone-300 pl-3 text-sm text-slate-700"><span className="font-bold">Din kommentar:</span> {entry.comment}</div>}
                                 {entry.status === 'rejected' && entry.rejection_reason && (
-                                    <div className="mt-4 p-4 bg-rose-500/10 rounded-xl border border-rose-500/20 backdrop-blur-sm">
-                                        <div className="text-sm font-bold text-rose-700 flex items-center gap-2">
-                                            <XIcon />
-                                            Årsag til afvisning:
-                                        </div>
-                                        <div className="text-sm text-rose-600 mt-1">{entry.rejection_reason}</div>
-                                        <div className="text-xs text-rose-500 mt-2">
-                                            Afvist af {entry.reviewed_by} • {formatDate(entry.reviewed_at)}
-                                        </div>
-                                        <div className="mt-3 pt-3 border-t border-rose-500/20 text-xs text-gray-500">
-                                            Bemærk: Afviste registreringer kan ikke rettes. Opret en ny registrering i stedet.
-                                        </div>
-                                    </div>
+                                    <div className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900"><div className="flex items-center gap-2 font-bold"><Icon type="rejected" />Årsag til afvisning</div><p className="mt-1">{entry.rejection_reason}</p><p className="mt-2 text-xs">Afvist af {entry.reviewed_by} · Opret en ny registrering, hvis timerne skal indsendes igen.</p></div>
                                 )}
-
-                                {/* Approved info */}
                                 {entry.status === 'approved' && (
-                                    <div className="mt-4 p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 backdrop-blur-sm">
-                                        <div className="text-sm text-emerald-700 flex items-center gap-2">
-                                            <CheckIcon />
-                                            <span className="font-semibold">Godkendt af {entry.reviewed_by}</span>
-                                            {entry.payroll_date && (
-                                                <span className="text-emerald-600">• Data sendt: {new Date(entry.payroll_date).toLocaleString('da-DK', {
-                                                    day: '2-digit',
-                                                    month: '2-digit',
-                                                    year: 'numeric',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit'
-                                                })}</span>
-                                            )}
-                                        </div>
-                                    </div>
+                                    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900"><Icon type="approved" /><strong>Godkendt af {entry.reviewed_by}</strong>{entry.payroll_date && <span>· Data sendt {new Date(entry.payroll_date).toLocaleString('da-DK')}</span>}</div>
                                 )}
-                            </div>
+                            </article>
                         ))}
                     </div>
                 )}
-            </div>
+            </section>
         </div>
     );
 }

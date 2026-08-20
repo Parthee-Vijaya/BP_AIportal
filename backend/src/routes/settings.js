@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import db from '../db/database.js';
+import { validateMonthInterval } from '../services/grantCalculator.js';
+import { isValidationError } from '../utils/validation.js';
+import { PERMISSIONS, requirePermission } from '../services/permissions.js';
 
 const router = Router();
 
@@ -51,44 +54,46 @@ router.get('/month-interval/history', (req, res) => {
 });
 
 // PUT /api/settings/month-interval - Opdater månedsinterval (gælder fra d.d. og frem)
-router.put('/month-interval', (req, res) => {
+router.put('/month-interval', requirePermission(PERMISSIONS.MANAGE_SETTINGS), (req, res) => {
     try {
-        const { start_day, end_day } = req.body;
-
-        if (!start_day || !end_day) {
-            return res.status(400).json({ error: 'Start- og slutdag er påkrævet' });
-        }
-
-        if (start_day < 1 || start_day > 31 || end_day < 1 || end_day > 31) {
-            return res.status(400).json({ error: 'Dag skal være mellem 1 og 31' });
-        }
+        const { startDay, endDay } = validateMonthInterval(req.body.start_day, req.body.end_day);
 
         const today = new Date().toISOString().split('T')[0];
 
-        // Indsæt ny historik-post (gælder fra i dag)
-        db.prepare(`
-            INSERT INTO month_interval_history (start_day, end_day, effective_from)
-            VALUES (?, ?, ?)
-        `).run(start_day, end_day, today);
+        db.transaction(() => {
+            const todayEntry = db.prepare(`
+                SELECT id FROM month_interval_history WHERE effective_from = ? ORDER BY id DESC LIMIT 1
+            `).get(today);
+            if (todayEntry) {
+                db.prepare(`
+                    UPDATE month_interval_history SET start_day = ?, end_day = ? WHERE id = ?
+                `).run(startDay, endDay, todayEntry.id);
+            } else {
+                db.prepare(`
+                    INSERT INTO month_interval_history (start_day, end_day, effective_from)
+                    VALUES (?, ?, ?)
+                `).run(startDay, endDay, today);
+            }
 
-        // Opdater settings-tabellen også
-        db.prepare(`
-            INSERT OR REPLACE INTO settings (key, value, updated_at, effective_from)
-            VALUES ('month_interval_start', ?, CURRENT_TIMESTAMP, ?)
-        `).run(String(start_day), today);
+            db.prepare(`
+                INSERT OR REPLACE INTO settings (key, value, updated_at, effective_from)
+                VALUES ('month_interval_start', ?, CURRENT_TIMESTAMP, ?)
+            `).run(String(startDay), today);
 
-        db.prepare(`
-            INSERT OR REPLACE INTO settings (key, value, updated_at, effective_from)
-            VALUES ('month_interval_end', ?, CURRENT_TIMESTAMP, ?)
-        `).run(String(end_day), today);
+            db.prepare(`
+                INSERT OR REPLACE INTO settings (key, value, updated_at, effective_from)
+                VALUES ('month_interval_end', ?, CURRENT_TIMESTAMP, ?)
+            `).run(String(endDay), today);
+        })();
 
         res.json({
-            start_day,
-            end_day,
+            start_day: startDay,
+            end_day: endDay,
             effective_from: today,
-            message: `Månedsinterval ændret til d. ${start_day} - d. ${end_day}. Gælder fra ${today} og frem.`
+            message: `Månedsinterval ændret til d. ${startDay} - d. ${endDay}. Gælder fra ${today} og frem.`
         });
     } catch (error) {
+        if (isValidationError(error)) return res.status(400).json({ error: error.message });
         console.error('Fejl ved opdatering af månedsinterval:', error);
         res.status(500).json({ error: 'Kunne ikke opdatere månedsinterval' });
     }

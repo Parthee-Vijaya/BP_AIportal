@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { timeEntriesApi, childrenApi, caregiversApi, exportApi, settingsApi } from '../../utils/api';
 import { formatHours, padMaNumber } from '../../utils/helpers';
+import DialogShell from '../../components/DialogShell';
 
 // Icons
 const ClockIcon = () => (
@@ -102,6 +103,23 @@ function getDayName(dateString) {
     return date.toLocaleDateString('da-DK', { weekday: 'short' });
 }
 
+function formatChildAge(dateString) {
+    if (!dateString) return null;
+    const birthDate = new Date(`${dateString}T00:00:00`);
+    if (Number.isNaN(birthDate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const birthdayHasPassed = today.getMonth() > birthDate.getMonth()
+        || (today.getMonth() === birthDate.getMonth() && today.getDate() >= birthDate.getDate());
+    if (!birthdayHasPassed) age -= 1;
+    return age >= 0 ? `${age} år` : null;
+}
+
+function isValidMonthInterval({ start_day, end_day }) {
+    return (start_day === 1 && end_day === 31)
+        || (start_day >= 2 && start_day <= 28 && end_day === start_day - 1);
+}
+
 // Sorterbar kolonneheader
 function SortableHeader({ label, sortKey, currentSort, onSort, className = '' }) {
     const isActive = currentSort.key === sortKey;
@@ -119,7 +137,10 @@ function SortableHeader({ label, sortKey, currentSort, onSort, className = '' })
     );
 }
 
-export default function ApprovalPage({ isMobileView = false, userRole = 'admin' }) {
+export default function ApprovalPage({ isMobileView = false, approver = null, permissions = [] }) {
+    const currentActor = approver?.name || 'Godkender (demo)';
+    const canExport = permissions.includes('export_reports');
+    const canManageSettings = permissions.includes('manage_settings');
     const [activeTab, setActiveTab] = useState('pending');
     const [entries, setEntries] = useState([]);
     const [children, setChildren] = useState([]);
@@ -136,18 +157,20 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
     const [viewReasonModal, setViewReasonModal] = useState({ open: false, reason: '', entry: null });
     const [payrollModal, setPayrollModal] = useState({ open: false, entryId: null, payrollDate: new Date().toISOString().slice(0, 10) });
     const [isCompactView, setIsCompactView] = useState(true);
+    const [page, setPage] = useState(1);
 
     // Sorterings-state: key + direction (default sættes pr. tab)
     const [sortConfig, setSortConfig] = useState({ key: 'caregiver_name', direction: 'asc' });
 
-    // Periode-søgning for godkendte indberetninger
-    const [approvedFromDate, setApprovedFromDate] = useState('');
-    const [approvedToDate, setApprovedToDate] = useState('');
+    // Samme periodefilter anvendes på alle statusfaner.
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState('');
 
     // Månedsinterval indstillinger
     const [monthInterval, setMonthInterval] = useState({ start_day: 1, end_day: 31 });
     const [showMonthIntervalModal, setShowMonthIntervalModal] = useState(false);
     const [newMonthInterval, setNewMonthInterval] = useState({ start_day: 1, end_day: 31 });
+    const monthIntervalIsValid = isValidMonthInterval(newMonthInterval);
 
     // Automatisk kompakt visning på mobil
     const effectiveCompactView = isMobileView || isCompactView;
@@ -163,7 +186,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
 
     useEffect(() => {
         loadData();
-    }, [activeTab, selectedChild, selectedCaregiver, approvedFromDate, approvedToDate]);
+    }, [activeTab, selectedChild, selectedCaregiver, fromDate, toDate]);
 
     useEffect(() => {
         loadMonthInterval();
@@ -180,6 +203,10 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
     }
 
     async function handleSaveMonthInterval() {
+        if (!monthIntervalIsValid) {
+            alert('Vælg 1-31 eller en sammenhængende forskudt måned, fx 16-15.');
+            return;
+        }
         try {
             await settingsApi.updateMonthInterval(newMonthInterval.start_day, newMonthInterval.end_day);
             setShowMonthIntervalModal(false);
@@ -200,12 +227,11 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
             if (selectedCaregiver !== 'all') {
                 params.caregiver_id = selectedCaregiver;
             }
-            // Periode-søgning for godkendte
-            if (activeTab === 'approved' && approvedFromDate) {
-                params.from_date = approvedFromDate;
+            if (fromDate) {
+                params.from_date = fromDate;
             }
-            if (activeTab === 'approved' && approvedToDate) {
-                params.to_date = approvedToDate;
+            if (toDate) {
+                params.to_date = toDate;
             }
 
             const [entriesData, childrenData, caregiversData] = await Promise.all([
@@ -222,23 +248,13 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
             childrenData.forEach(c => { cMap[c.id] = c; });
             setChildrenMap(cMap);
 
-            const uniqueChildIds = [...new Set(entriesData.map(e => e.child_id))];
-            const summaries = {};
-            await Promise.all(
-                uniqueChildIds.map(async (childId) => {
-                    try {
-                        const childData = await childrenApi.getById(childId);
-                        if (childData.grantSummary) {
-                            summaries[childId] = childData.grantSummary;
-                        }
-                        cMap[childId] = childData;
-                    } catch (err) {
-                        console.error(`Kunne ikke hente bevilling for barn ${childId}:`, err);
-                    }
-                })
+            const summaries = Object.fromEntries(
+                childrenData
+                    .filter(child => child.grantSummary)
+                    .map(child => [child.id, child.grantSummary])
             );
             setGrantSummaries(summaries);
-            setChildrenMap({...cMap});
+            setChildrenMap({ ...cMap });
         } catch (error) {
             console.error('Fejl ved indlæsning:', error);
         } finally {
@@ -258,8 +274,8 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
         setSearchQuery('');
         setSelectedChild('all');
         setSelectedCaregiver('all');
-        setApprovedFromDate('');
-        setApprovedToDate('');
+        setFromDate('');
+        setToDate('');
         if (activeTab === 'pending' || activeTab === 'rejected') {
             setSortConfig({ key: 'caregiver_name', direction: 'asc' });
         } else if (activeTab === 'approved') {
@@ -294,7 +310,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
             const query = searchQuery.toLowerCase();
             const caregiverName = `${entry.caregiver_first_name} ${entry.caregiver_last_name}`.toLowerCase();
             const childName = `${entry.child_first_name} ${entry.child_last_name}`.toLowerCase();
-            const maNumber = (entry.ma_number || '').toLowerCase();
+            const maNumber = padMaNumber(entry.ma_number || '').toLowerCase();
             return caregiverName.includes(query) || childName.includes(query) || maNumber.includes(query);
         })
         .sort((a, b) => {
@@ -305,9 +321,23 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
             return aVal.localeCompare(bVal, 'da') * direction;
         });
 
-    async function handleApprove(id) {
+    const pageSize = 10;
+    const totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
+    const visibleEntries = filteredEntries.slice((page - 1) * pageSize, page * pageSize);
+
+    useEffect(() => {
+        setPage(1);
+    }, [activeTab, searchQuery, selectedChild, selectedCaregiver, fromDate, toDate, sortConfig.key, sortConfig.direction]);
+
+    async function handleApprove(entryOrId) {
+        const entry = typeof entryOrId === 'object' ? entryOrId : entries.find(item => item.id === entryOrId);
+        const id = entry?.id ?? entryOrId;
+        if (entry && getGrantStatus(entry)?.isExceeded) {
+            const confirmed = confirm('Registreringen overskrider bevillingen. Vil du godkende den alligevel? Handlingen registreres i auditloggen.');
+            if (!confirmed) return;
+        }
         try {
-            await timeEntriesApi.approve(id, 'Admin');
+            await timeEntriesApi.approve(id, currentActor);
             loadData();
         } catch (error) {
             alert('Fejl ved godkendelse: ' + error.message);
@@ -321,7 +351,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
         }
 
         try {
-            await timeEntriesApi.reject(rejectModal.entryId, 'Admin', rejectReason);
+            await timeEntriesApi.reject(rejectModal.entryId, currentActor, rejectReason);
             setRejectModal({ open: false, entryId: null });
             setRejectReason('');
             loadData();
@@ -337,7 +367,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
         }
 
         try {
-            await timeEntriesApi.batchApprove(selectedIds, 'Admin');
+            await timeEntriesApi.batchApprove(selectedIds, currentActor);
             setSelectedIds([]);
             loadData();
         } catch (error) {
@@ -346,14 +376,14 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
     }
 
     function openPayrollModal(entryId) {
-        setPayrollModal({ open: true, entryId, payrollDate: new Date().toISOString() });
+        setPayrollModal({ open: true, entryId, payrollDate: new Date().toISOString().slice(0, 10) });
     }
 
     async function handleMarkPayroll() {
         if (!payrollModal.entryId) return;
         try {
-            await timeEntriesApi.markPayroll(payrollModal.entryId, new Date().toISOString());
-            setPayrollModal({ open: false, entryId: null, payrollDate: new Date().toISOString() });
+            await timeEntriesApi.markPayroll(payrollModal.entryId, payrollModal.payrollDate, currentActor);
+            setPayrollModal({ open: false, entryId: null, payrollDate: new Date().toISOString().slice(0, 10) });
             loadData();
         } catch (error) {
             alert('Fejl: ' + error.message);
@@ -369,10 +399,11 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
     }
 
     function toggleSelectAll() {
-        if (selectedIds.length === filteredEntries.length) {
+        const safeEntries = filteredEntries.filter(entry => !getGrantStatus(entry)?.isExceeded);
+        if (selectedIds.length === safeEntries.length) {
             setSelectedIds([]);
         } else {
-            setSelectedIds(filteredEntries.map(e => e.id));
+            setSelectedIds(safeEntries.map(e => e.id));
         }
     }
 
@@ -382,8 +413,8 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
         { id: 'rejected', label: 'Afviste', icon: <XIcon /> }
     ];
 
-    function getGrantStatus(childId) {
-        const summary = grantSummaries[childId];
+    function getGrantStatus(entry) {
+        const summary = entry.grant_status || grantSummaries[entry.child_id];
         if (!summary) return null;
 
         if (summary.grantType === 'specific_weekdays' && summary.weekdays) {
@@ -392,7 +423,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
             let anyExceeded = false;
 
             Object.values(summary.weekdays).forEach(day => {
-                totalGrant += day.grantHours;
+                totalGrant += day.effectiveGrantHours ?? day.grantHours;
                 totalUsed += day.usedHours;
                 if (day.exceeded) anyExceeded = true;
             });
@@ -403,29 +434,42 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                 usedHours: totalUsed,
                 grantHours: totalGrant,
                 percentage,
-                isExceeded: anyExceeded || percentage >= 100
+                isExceeded: anyExceeded || percentage > 100,
+                periodStart: summary.periodStart,
+                periodEnd: summary.periodEnd,
+                source: entry.grant_source
             };
         }
 
-        const percentage = summary.grantHours > 0
-            ? (summary.usedHours / summary.grantHours) * 100
+        const grantHours = summary.effectiveGrantHours ?? summary.grantHours;
+        const percentage = grantHours > 0
+            ? (summary.usedHours / grantHours) * 100
             : 0;
 
         return {
             usedHours: summary.usedHours,
-            grantHours: summary.grantHours,
+            grantHours,
             percentage,
-            isExceeded: summary.exceeded || percentage >= 100
+            isExceeded: summary.exceeded || percentage > 100,
+            periodStart: summary.periodStart,
+            periodEnd: summary.periodEnd,
+            source: entry.grant_source,
+            baseGrantHours: summary.baseGrantHours,
+            baseUsedHours: summary.baseUsedHours,
+            extraGrantHours: summary.extraGrantHours || 0,
+            extraUsedHours: summary.extraUsedHours || 0,
+            extraRemainingHours: summary.extraRemainingHours || 0,
+            extraGrants: summary.extraGrants || []
         };
     }
 
     function formatTimeBreakdown(entry) {
         const parts = [];
         // Normaltimer vises kun i de samlede tal, ikke som tillægs-badge
-        if (entry.evening_hours > 0) parts.push({ label: 'Aften', value: entry.evening_hours, color: 'bg-purple-100 text-purple-700' });
-        if (entry.night_hours > 0) parts.push({ label: 'Nat', value: entry.night_hours, color: 'bg-indigo-100 text-indigo-700' });
-        if (entry.saturday_hours > 0) parts.push({ label: 'Lørdag', value: entry.saturday_hours, color: 'bg-orange-100 text-orange-700' });
-        if (entry.sunday_holiday_hours > 0) parts.push({ label: 'Søn/Hellig', value: entry.sunday_holiday_hours, color: 'bg-red-100 text-red-700' });
+        if (entry.evening_hours > 0) parts.push({ label: 'Aften', value: entry.evening_hours, color: 'border border-stone-300 bg-white text-slate-700' });
+        if (entry.night_hours > 0) parts.push({ label: 'Nat', value: entry.night_hours, color: 'border border-stone-300 bg-white text-slate-700' });
+        if (entry.saturday_hours > 0) parts.push({ label: 'Lørdag', value: entry.saturday_hours, color: 'border border-stone-300 bg-white text-slate-700' });
+        if (entry.sunday_holiday_hours > 0) parts.push({ label: 'Søn/Hellig', value: entry.sunday_holiday_hours, color: 'border border-stone-300 bg-white text-slate-700' });
         return parts;
     }
 
@@ -449,32 +493,34 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
     const summary = calculateSummary(filteredEntries);
 
     // Beregn statistik - kun overskridelser
-    const exceededCount = filteredEntries.filter(e => getGrantStatus(e.child_id)?.isExceeded).length;
+    const exceededCount = filteredEntries.filter(e => getGrantStatus(e)?.isExceeded).length;
 
     return (
         <div className="space-y-6">
             {/* Header - compact single line */}
-            <div className="bg-white rounded-xl px-4 py-2.5 shadow-sm border border-gray-200 animate-fade-in">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-base font-bold text-gray-900">Godkendelse af timer</h2>
+            <div className="page-heading mb-0 animate-fade-in">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="eyebrow">Godkender</div>
+                        <h1>Godkendelse af timer</h1>
+                        <p>Gennemgå, godkend eller afvis registrerede timer.</p>
                         {activeTab === 'pending' && filteredEntries.length > 0 && (
-                            <div className="flex items-center gap-3">
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-gray-100 rounded-lg border border-gray-200 text-xs">
+                            <div className="mt-3 flex items-center gap-3">
+                                <span className="inline-flex items-center gap-1.5 border-r border-stone-300 pr-3 text-xs">
                                     <span className="font-semibold text-gray-900">{filteredEntries.length}</span>
                                     <span className="text-gray-500">afventer</span>
                                 </span>
                                 {exceededCount > 0 && (
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-rose-50 rounded-lg border border-rose-200 text-xs">
-                                        <span className="font-semibold text-rose-600">{exceededCount}</span>
-                                        <span className="text-rose-500">overskrider</span>
+                                    <span className="inline-flex items-center gap-1.5 text-xs text-red-800">
+                                        <span className="font-semibold">{exceededCount}</span>
+                                        <span>overskrider</span>
                                     </span>
                                 )}
                             </div>
                         )}
                     </div>
-                    <div className="flex items-center gap-2">
-                        {userRole === 'admin' && (
+                    <div className="approval-header-actions flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                        {canManageSettings && (
                             <button
                                 onClick={() => setShowMonthIntervalModal(true)}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-medium text-xs"
@@ -484,7 +530,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                 <span className="hidden sm:inline">d. {monthInterval.start_day}-{monthInterval.end_day}</span>
                             </button>
                         )}
-                        <div className="flex bg-gray-100 rounded-lg p-0.5 border border-gray-200">
+                        <div className="flex rounded-lg border border-gray-200 bg-gray-100 p-0.5">
                             <button
                                 onClick={() => setIsCompactView(false)}
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
@@ -508,29 +554,31 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                 Kompakt
                             </button>
                         </div>
-                        <a
-                            href={exportApi.timeEntries({ status: activeTab })}
-                            download
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg hover:from-emerald-600 hover:to-emerald-700 transition-all font-medium text-xs shadow-md shadow-emerald-500/25"
-                        >
-                            <DownloadIcon />
-                            CSV
-                        </a>
+                        {canExport && (
+                            <a
+                                href={exportApi.timeEntries({ status: activeTab })}
+                                download
+                                className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
+                            >
+                                <DownloadIcon />
+                                CSV
+                            </a>
+                        )}
                     </div>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="bg-white rounded-2xl overflow-clip shadow-sm border border-gray-200 animate-fade-in-up max-w-6xl mx-auto">
+            <div className="surface overflow-clip rounded-lg animate-fade-in-up">
                 {/* Sticky wrapper for tabs + summary + filters */}
-                <div className="sticky top-[124px] z-20 bg-white rounded-t-2xl">
+                <div className="sticky top-[72px] z-20 bg-white">
                 {/* Tabs */}
-                <div className="border-b border-gray-200 flex bg-gray-50 rounded-t-2xl">
+                <div className="flex overflow-x-auto rounded-t-2xl border-b border-gray-200 bg-gray-50">
                     {tabs.map((tab) => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-2 px-6 py-4 text-sm font-medium transition-all relative ${
+                            className={`relative flex min-w-fit flex-1 items-center justify-center gap-2 px-4 py-4 text-sm font-medium transition-all sm:flex-none sm:px-6 ${
                                 activeTab === tab.id
                                     ? 'text-[#B54A32]'
                                     : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
@@ -541,7 +589,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                             </span>
                             {tab.label}
                             {activeTab === tab.id && (
-                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-[#B54A32] to-[#9a3f2b]" />
+                                <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#A6402C]" />
                             )}
                         </button>
                     ))}
@@ -566,23 +614,23 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                             {/* Separator */}
                             <div className="hidden sm:block h-4 w-px bg-gray-300"></div>
                             {/* Tillægsfordeling med navne (kun tillægstyper) */}
-                            <div className="flex items-center gap-4 text-xs">
+                            <div className="flex flex-wrap items-center gap-2 text-xs sm:gap-4">
                                 <span className="text-gray-400">Fordeling:</span>
                                 <span className="inline-flex items-center gap-1.5">
                                     <span className="text-gray-500">Aften:</span>
-                                    <span className="font-semibold text-purple-600">{formatHours(summary.eveningHours)}</span>
+                                <span className="font-semibold text-slate-800">{formatHours(summary.eveningHours)}</span>
                                 </span>
                                 <span className="inline-flex items-center gap-1.5">
                                     <span className="text-gray-500">Nat:</span>
-                                    <span className="font-semibold text-indigo-600">{formatHours(summary.nightHours)}</span>
+                                <span className="font-semibold text-slate-800">{formatHours(summary.nightHours)}</span>
                                 </span>
                                 <span className="inline-flex items-center gap-1.5">
                                     <span className="text-gray-500">Lørdag:</span>
-                                    <span className="font-semibold text-orange-600">{formatHours(summary.saturdayHours)}</span>
+                                <span className="font-semibold text-slate-800">{formatHours(summary.saturdayHours)}</span>
                                 </span>
                                 <span className="inline-flex items-center gap-1.5">
                                     <span className="text-gray-500">Søn/Hellig:</span>
-                                    <span className="font-semibold text-red-600">{formatHours(summary.sundayHours)}</span>
+                                <span className="font-semibold text-slate-800">{formatHours(summary.sundayHours)}</span>
                                 </span>
                             </div>
                         </div>
@@ -590,15 +638,16 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                 )}
 
                 {/* Filters */}
-                <div className="p-4 bg-white border-b border-gray-200">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <div className="relative flex-1 max-w-xs">
+                <div className="border-b border-gray-200 bg-white p-4">
+                    <div className="approval-filter-grid">
+                        <div className="relative min-w-0">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                                 <SearchIcon />
                             </div>
                             <input
                                 type="text"
-                                placeholder="Søg på navn eller MA-nummer..."
+                                aria-label="Søg på navn eller MA-nummer"
+                                placeholder="Søg navn eller MA-nr."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20 focus:border-[#B54A32]/30 transition-all"
@@ -608,7 +657,8 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                         <select
                             value={selectedChild}
                             onChange={(e) => setSelectedChild(e.target.value)}
-                            className="px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20"
+                            aria-label="Filtrer efter barn"
+                            className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20"
                         >
                             <option value="all">Alle børn</option>
                             {children.map((child) => (
@@ -621,7 +671,8 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                         <select
                             value={selectedCaregiver}
                             onChange={(e) => setSelectedCaregiver(e.target.value)}
-                            className="px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20"
+                            aria-label="Filtrer efter barnepige"
+                            className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20"
                         >
                             <option value="all">Alle barnepiger</option>
                             {caregivers.map((cg) => (
@@ -632,15 +683,16 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                         </select>
 
                         {/* Sortering */}
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500 font-medium">Sortér:</span>
+                        <div className="flex min-w-0 items-center gap-2">
+                            <label htmlFor="approval-sort" className="shrink-0 text-xs font-medium text-gray-500">Sortér:</label>
                             <select
+                                id="approval-sort"
                                 value={`${sortConfig.key}-${sortConfig.direction}`}
                                 onChange={(e) => {
                                     const [key, direction] = e.target.value.split('-');
                                     setSortConfig({ key, direction });
                                 }}
-                                className="px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20"
+                                className="min-w-0 flex-1 px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20"
                             >
                                 <option value="date-desc">Dato (nyeste først)</option>
                                 <option value="date-asc">Dato (ældste først)</option>
@@ -653,69 +705,46 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                             </select>
                         </div>
 
-                        {/* Periode-søgning for godkendte - admin og godkender */}
-                        {activeTab === 'approved' && userRole !== 'caregiver' && (
-                            <>
-                                <div className="flex items-center gap-2">
-                                    <label className="text-xs text-gray-500 font-medium">Fra:</label>
-                                    <input
-                                        type="date"
-                                        value={approvedFromDate}
-                                        onChange={(e) => setApprovedFromDate(e.target.value)}
-                                        className="px-3 py-2 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <label className="text-xs text-gray-500 font-medium">Til:</label>
-                                    <input
-                                        type="date"
-                                        value={approvedToDate}
-                                        onChange={(e) => setApprovedToDate(e.target.value)}
-                                        className="px-3 py-2 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20"
-                                    />
-                                </div>
-                                {(approvedFromDate || approvedToDate) && (
-                                    <button
-                                        onClick={() => { setApprovedFromDate(''); setApprovedToDate(''); }}
-                                        className="text-xs text-gray-500 hover:text-[#B54A32] font-medium underline"
-                                    >
-                                        Nulstil periode
-                                    </button>
-                                )}
-                            </>
-                        )}
+                        <div className="flex min-w-0 items-center gap-2">
+                            <label htmlFor="filter-from-date" className="shrink-0 text-xs font-medium text-gray-500">Fra:</label>
+                            <input id="filter-from-date" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="min-w-0 flex-1 px-3 py-2 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20" />
+                        </div>
+                        <div className="flex min-w-0 items-center gap-2">
+                            <label htmlFor="filter-to-date" className="shrink-0 text-xs font-medium text-gray-500">Til:</label>
+                            <input id="filter-to-date" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="min-w-0 flex-1 px-3 py-2 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20" />
+                        </div>
 
                         {/* Generel nulstil-knap for filtre */}
                         <button
                             type="button"
                             onClick={resetFilters}
-                            className="px-3 py-2 text-xs font-medium text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50"
+                            className="min-h-11 whitespace-nowrap px-3 py-2 text-xs font-medium text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50"
                         >
                             Nulstil filtre
                         </button>
 
-                        {activeTab === 'pending' && filteredEntries.length > 0 && (
-                            <div className="flex items-center gap-3 ml-auto">
+                    </div>
+                    {activeTab === 'pending' && filteredEntries.length > 0 && (
+                            <div className="approval-batch mt-3 flex items-center justify-end gap-3 border-t border-stone-200 pt-3">
                                 <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                                     <input
                                         type="checkbox"
-                                        checked={selectedIds.length === filteredEntries.length && filteredEntries.length > 0}
+                                        checked={selectedIds.length > 0 && selectedIds.length === filteredEntries.filter(entry => !getGrantStatus(entry)?.isExceeded).length}
                                         onChange={toggleSelectAll}
                                         className="rounded border-gray-300 text-[#B54A32] focus:ring-[#B54A32] w-4 h-4"
                                     />
-                                    Vælg alle
+                                    Vælg uden advarsler
                                 </label>
                                 <button
                                     onClick={handleBatchApprove}
                                     disabled={selectedIds.length === 0}
-                                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all shadow-lg shadow-emerald-500/25"
+                                    className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 font-medium disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     <CheckMarkIcon />
                                     Godkend valgte ({selectedIds.length})
                                 </button>
                             </div>
                         )}
-                    </div>
                 </div>
                 </div>{/* End sticky wrapper */}
 
@@ -740,15 +769,16 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                 ) : effectiveCompactView ? (
                     /* COMPACT TABLE VIEW */
                     <div>
-                        <table className="w-full">
+                        <table className="responsive-table">
                             <thead className="bg-white/95 backdrop-blur-sm sticky top-[305px] z-10 shadow-sm">
                                 <tr>
                                     {activeTab === 'pending' && (
                                         <th className="px-4 py-3 text-left">
                                             <input
                                                 type="checkbox"
-                                                checked={selectedIds.length === filteredEntries.length && filteredEntries.length > 0}
+                                                checked={selectedIds.length > 0 && selectedIds.length === filteredEntries.filter(entry => !getGrantStatus(entry)?.isExceeded).length}
                                                 onChange={toggleSelectAll}
+                                                aria-label="Vælg alle registreringer uden bevillingsadvarsler"
                                                 className="rounded border-gray-300 text-[#B54A32] focus:ring-[#B54A32]"
                                             />
                                         </th>
@@ -767,8 +797,8 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {filteredEntries.map((entry) => {
-                                    const grantStatus = getGrantStatus(entry.child_id);
+                                {visibleEntries.map((entry) => {
+                                    const grantStatus = getGrantStatus(entry);
                                     const isExceeded = grantStatus?.isExceeded;
                                     const timeBreakdown = formatTimeBreakdown(entry);
 
@@ -778,22 +808,24 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                             className={`
                                                 transition-colors
                                                 ${activeTab === 'pending' && isExceeded
-                                                    ? 'bg-rose-50 hover:bg-rose-100'
-                                                    : 'hover:bg-gray-50'
+                                                    ? 'approval-row-warning hover:bg-stone-50'
+                                                    : 'hover:bg-stone-50'
                                                 }
                                             `}
                                         >
                                             {activeTab === 'pending' && (
-                                                <td className="px-4 py-3">
+                                                <td data-label="" className="px-4 py-3">
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedIds.includes(entry.id)}
                                                         onChange={() => toggleSelect(entry.id)}
+                                                        disabled={isExceeded}
+                                                        aria-label={isExceeded ? 'Kan ikke massevælges på grund af bevillingsoverskridelse' : `Vælg registrering ${entry.id}`}
                                                         className="rounded border-gray-300 text-[#B54A32] focus:ring-[#B54A32]"
                                                     />
                                                 </td>
                                             )}
-                                            <td className="px-4 py-3">
+                                            <td data-label="Barnepige" className="px-4 py-3">
                                                 <button
                                                     type="button"
                                                     onClick={() => setSelectedCaregiver(String(entry.caregiver_id))}
@@ -803,7 +835,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                                 </button>
                                                 <div className="text-xs text-gray-500 font-mono">{padMaNumber(entry.ma_number)}</div>
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td data-label="Barn" className="px-4 py-3">
                                                 <button
                                                     type="button"
                                                     onClick={() => setSelectedChild(String(entry.child_id))}
@@ -811,18 +843,21 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                                 >
                                                     {entry.child_first_name} {entry.child_last_name}
                                                 </button>
+                                                {formatChildAge(entry.child_birth_date) && (
+                                                    <div className="text-xs text-gray-500">{formatChildAge(entry.child_birth_date)}</div>
+                                                )}
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td data-label="Dato" className="px-4 py-3">
                                                 <div className="text-sm text-gray-900">{formatShortDate(entry.date)}</div>
                                                 <div className="text-xs text-gray-500 capitalize">{getDayName(entry.date)}</div>
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-gray-700">
+                                            <td data-label="Tid" className="px-4 py-3 text-sm text-gray-700">
                                                 {entry.start_time?.slice(0,5)} - {entry.end_time?.slice(0,5)}
                                             </td>
-                                            <td className="px-4 py-3 text-right">
+                                            <td data-label="Timer" className="px-4 py-3 text-right">
                                                 <span className="font-bold text-gray-900">{formatHours(entry.total_hours)}</span>
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td data-label="Tillæg" className="px-4 py-3">
                                                 {/* Tillæg badges i kompakt visning */}
                                                 {timeBreakdown.length > 0 && (
                                                     <div className="flex flex-wrap gap-1 mb-1">
@@ -834,21 +869,30 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3">
+                                            <td data-label="Bevilling" className="px-4 py-3">
                                                 {grantStatus && (
                                                     <div className="w-28 max-w-[7rem]">
                                                         <div className={`text-xs font-medium mb-1 ${
-                                                            isExceeded ? 'text-rose-600' : 'text-emerald-600'
+                                                            isExceeded ? 'text-red-800' : 'text-slate-800'
                                                         }`}>
                                                             {formatHours(grantStatus.usedHours)}/{formatHours(grantStatus.grantHours)}
                                                             {isExceeded && (
                                                                 <span className="ml-1 text-rose-500" title="Overskrider bevilling">▲</span>
                                                             )}
                                                         </div>
+                                                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                                                            {grantStatus.source === 'frame' ? 'Rammebevilling' : 'Normal bevilling'}
+                                                        </div>
+                                                        {grantStatus.periodStart && (
+                                                            <div className="mb-1 text-[10px] text-gray-500">{formatShortDate(grantStatus.periodStart)} – {formatShortDate(grantStatus.periodEnd)}</div>
+                                                        )}
+                                                        {grantStatus.extraGrantHours > 0 && (
+                                                            <div className="mb-1 text-[10px] font-semibold text-[#823322]">Ekstra {formatHours(grantStatus.extraUsedHours)}/{formatHours(grantStatus.extraGrantHours)} t.</div>
+                                                        )}
                                                         <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
                                                             <div
                                                                 className={`h-full rounded-full ${
-                                                                    isExceeded ? 'bg-rose-500' : 'bg-emerald-500'
+                                                                    isExceeded ? 'bg-[#A6402C]' : 'bg-slate-700'
                                                                 }`}
                                                                 style={{ width: `${Math.min(grantStatus.percentage, 100)}%` }}
                                                             />
@@ -857,7 +901,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                                 )}
                                             </td>
                                             {activeTab === 'approved' && (
-                                                <td className="px-4 py-3">
+                                                <td data-label="Overført til løn" className="px-4 py-3">
                                                     {entry.payroll_date ? (
                                                         <div className="flex items-center gap-1.5">
                                                             <svg className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -872,18 +916,18 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                                     )}
                                                 </td>
                                             )}
-                                            <td className="px-4 py-3 text-right">
+                                            <td data-label="Handlinger" className="px-4 py-3 text-right">
                                                 {activeTab === 'pending' && (
                                                     <div className="flex justify-end gap-2">
                                                         <button
-                                                            onClick={() => handleApprove(entry.id)}
-                                                            className="px-3 py-1.5 bg-emerald-500 text-white text-xs rounded-lg font-medium hover:bg-emerald-600 transition-colors"
+                                                            onClick={() => handleApprove(entry)}
+                                                            className="approval-action-primary"
                                                         >
                                                             Godkend
                                                         </button>
                                                         <button
                                                             onClick={() => setRejectModal({ open: true, entryId: entry.id })}
-                                                            className="px-3 py-1.5 bg-rose-500 text-white text-xs rounded-lg font-medium hover:bg-rose-600 transition-colors"
+                                                            className="approval-action-secondary"
                                                         >
                                                             Afvis
                                                         </button>
@@ -926,31 +970,9 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                 ) : (
                     /* DETAILED CARD VIEW */
                     <div className="p-4">
-                        {/* Sortering - samme som tabelvisning */}
-                        <div className="flex items-center gap-2 mb-4">
-                            <span className="text-xs text-gray-500 font-medium">Sortér:</span>
-                            <select
-                                value={`${sortConfig.key}-${sortConfig.direction}`}
-                                onChange={(e) => {
-                                    const [key, direction] = e.target.value.split('-');
-                                    setSortConfig({ key, direction });
-                                }}
-                                className="px-3 py-2 bg-white border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#B54A32]/20"
-                            >
-                                <option value="date-desc">Dato (nyeste først)</option>
-                                <option value="date-asc">Dato (ældste først)</option>
-                                <option value="caregiver_name-asc">Barnepige (A-Å)</option>
-                                <option value="caregiver_name-desc">Barnepige (Å-A)</option>
-                                <option value="child_name-asc">Barn (A-Å)</option>
-                                <option value="child_name-desc">Barn (Å-A)</option>
-                                <option value="total_hours-desc">Timer (flest først)</option>
-                                <option value="total_hours-asc">Timer (færrest først)</option>
-                            </select>
-                        </div>
-
                         <div className="grid gap-3">
-                            {filteredEntries.map((entry) => {
-                                const grantStatus = getGrantStatus(entry.child_id);
+                            {visibleEntries.map((entry) => {
+                                const grantStatus = getGrantStatus(entry);
                                 const childData = childrenMap[entry.child_id];
                                 const isExceeded = grantStatus?.isExceeded;
                                 const timeBreakdown = formatTimeBreakdown(entry);
@@ -961,15 +983,15 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                         className={`
                                             relative rounded-xl border transition-all duration-200
                                             ${activeTab === 'pending' && isExceeded
-                                                ? 'bg-rose-50 border-rose-300 shadow-sm'
+                                                ? 'approval-card-warning bg-white border-stone-300'
                                                 : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'
                                             }
                                         `}
                                     >
                                         {/* Bevilling overskredet notifikation */}
                                         {isExceeded && (
-                                            <div className="px-6 py-2 bg-rose-100 border-b border-rose-200 rounded-t-xl">
-                                                <div className="flex items-center gap-2 text-rose-700 text-xs font-medium">
+                                            <div className="border-b border-stone-200 px-6 py-2">
+                                                <div className="flex items-center gap-2 text-red-800 text-xs font-bold">
                                                     <WarningIcon />
                                                     Det indtastede antal timer overskrider bevillingen. Det er godkender/leders opgave at sikre at det kan godkendes.
                                                 </div>
@@ -1028,6 +1050,9 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                                                     >
                                                                         {entry.child_first_name} {entry.child_last_name}
                                                                     </button>
+                                                                    {formatChildAge(entry.child_birth_date) && (
+                                                                        <div className="text-xs text-gray-500">{formatChildAge(entry.child_birth_date)}</div>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1070,20 +1095,32 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                                         {/* Grant status */}
                                                         {grantStatus && (
                                                             <div className="flex-shrink-0 w-48">
-                                                                <div className="text-xs text-gray-500 mb-2 text-right">Bevillingsstatus</div>
+                                                                <div className="text-xs text-gray-500 mb-1 text-right">Bevillingsstatus</div>
+                                                                <div className="mb-2 text-right text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                                                                    {grantStatus.source === 'frame' ? 'Rammebevilling' : 'Normal bevilling'}
+                                                                </div>
                                                                 <div className={`text-right font-semibold mb-1 ${
-                                                                    isExceeded ? 'text-rose-600' : 'text-emerald-600'
+                                                                    isExceeded ? 'text-red-800' : 'text-slate-800'
                                                                 }`}>
                                                                     {formatHours(grantStatus.usedHours)} / {formatHours(grantStatus.grantHours)} timer
                                                                 </div>
                                                                 <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
                                                                     <div
                                                                         className={`h-full rounded-full transition-all ${
-                                                                            isExceeded ? 'bg-rose-500' : 'bg-emerald-500'
+                                                                            isExceeded ? 'bg-[#A6402C]' : 'bg-slate-700'
                                                                         }`}
                                                                         style={{ width: `${Math.min(grantStatus.percentage, 100)}%` }}
                                                                     />
                                                                 </div>
+                                                                {grantStatus.periodStart && (
+                                                                    <div className="mt-1 text-right text-[10px] text-gray-500">{formatShortDate(grantStatus.periodStart)} – {formatShortDate(grantStatus.periodEnd)}</div>
+                                                                )}
+                                                                {grantStatus.extraGrantHours > 0 && (
+                                                                    <div className="mt-2 rounded-lg border border-stone-200 bg-stone-50 p-2 text-right text-[11px] text-slate-700">
+                                                                        <div>Grundbevilling: {formatHours(grantStatus.baseUsedHours)} / {formatHours(grantStatus.baseGrantHours)} t.</div>
+                                                                        <div className="font-semibold">Ekstra: {formatHours(grantStatus.extraUsedHours)} brugt · {formatHours(grantStatus.extraRemainingHours)} tilbage</div>
+                                                                    </div>
+                                                                )}
                                                                 {isExceeded && (
                                                                     <div className="text-xs text-rose-600 font-bold mt-1 text-right">
                                                                         +{formatHours(grantStatus.usedHours - grantStatus.grantHours)} over grænsen
@@ -1096,15 +1133,15 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                                         {activeTab === 'pending' && (
                                                             <div className="flex gap-2 flex-shrink-0">
                                                                 <button
-                                                                    onClick={() => handleApprove(entry.id)}
-                                                                    className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl font-medium hover:from-emerald-600 hover:to-emerald-700 transition-all shadow-lg shadow-emerald-500/25 flex items-center gap-2"
+                                                                    onClick={() => handleApprove(entry)}
+                                                                    className="approval-action-primary flex items-center gap-2 px-5 py-2.5"
                                                                 >
                                                                     <CheckMarkIcon />
                                                                     Godkend
                                                                 </button>
                                                                 <button
                                                                     onClick={() => setRejectModal({ open: true, entryId: entry.id })}
-                                                                    className="px-5 py-2.5 bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-xl font-medium hover:from-rose-600 hover:to-rose-700 transition-all shadow-lg shadow-rose-500/25 flex items-center gap-2"
+                                                                    className="approval-action-secondary flex items-center gap-2 px-5 py-2.5"
                                                                 >
                                                                     <XIcon />
                                                                     Afvis
@@ -1162,19 +1199,30 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                         </div>
                     </div>
                 )}
+                {filteredEntries.length > pageSize && (
+                    <nav aria-label="Sider med registreringer" className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-4 sm:flex-row">
+                        <span className="text-sm text-slate-600">Viser {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredEntries.length)} af {filteredEntries.length}</span>
+                        <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => setPage(current => Math.max(1, current - 1))} disabled={page === 1} className="min-h-11 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 disabled:opacity-40">Forrige</button>
+                            <span className="min-w-20 text-center text-sm font-semibold">Side {page} af {totalPages}</span>
+                            <button type="button" onClick={() => setPage(current => Math.min(totalPages, current + 1))} disabled={page === totalPages} className="min-h-11 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 disabled:opacity-40">Næste</button>
+                        </div>
+                    </nav>
+                )}
             </div>
 
             {/* Reject Modal */}
             {rejectModal.open && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-scale-in">
+                <DialogShell onClose={() => { setRejectModal({ open: false, entryId: null }); setRejectReason(''); }} labelledBy="reject-dialog-title" maxWidth="max-w-md" panelClassName="p-6">
                         <div className="flex items-center gap-3 mb-5">
                             <div className="w-12 h-12 bg-gradient-to-br from-rose-400 to-rose-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-rose-500/30">
                                 <XIcon />
                             </div>
-                            <h3 className="text-xl font-bold text-gray-900">Afvis registrering</h3>
+                            <h3 id="reject-dialog-title" className="text-xl font-bold text-gray-900">Afvis registrering</h3>
                         </div>
+                        <label htmlFor="reject-reason" className="mb-2 block text-sm font-semibold text-gray-700">Begrundelse *</label>
                         <textarea
+                            id="reject-reason"
                             value={rejectReason}
                             onChange={(e) => setRejectReason(e.target.value)}
                             placeholder="Angiv årsag til afvisning..."
@@ -1197,26 +1245,18 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                 Annuller
                             </button>
                         </div>
-                    </div>
-                </div>
+                </DialogShell>
             )}
 
             {/* View Rejection Reason Modal */}
             {viewReasonModal.open && (
-                <div
-                    className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in"
-                    onClick={() => setViewReasonModal({ open: false, reason: '', entry: null })}
-                >
-                    <div
-                        className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-scale-in"
-                        onClick={(e) => e.stopPropagation()}
-                    >
+                <DialogShell onClose={() => setViewReasonModal({ open: false, reason: '', entry: null })} labelledBy="reason-dialog-title" maxWidth="max-w-md" panelClassName="p-6">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-10 h-10 bg-gradient-to-br from-rose-400 to-rose-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-rose-500/30">
                                 <XIcon />
                             </div>
                             <div>
-                                <h3 className="text-lg font-bold text-gray-900">Afvisningsårsag</h3>
+                                <h3 id="reason-dialog-title" className="text-lg font-bold text-gray-900">Afvisningsårsag</h3>
                                 {viewReasonModal.entry && (
                                     <p className="text-sm text-gray-500">
                                         {viewReasonModal.entry.caregiver_first_name} {viewReasonModal.entry.caregiver_last_name} - {viewReasonModal.entry.child_first_name}
@@ -1238,20 +1278,18 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                         >
                             Luk
                         </button>
-                    </div>
-                </div>
+                </DialogShell>
             )}
 
             {/* Månedsinterval Modal */}
             {showMonthIntervalModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-scale-in">
+                <DialogShell onClose={() => setShowMonthIntervalModal(false)} labelledBy="month-dialog-title" maxWidth="max-w-md" panelClassName="p-6">
                         <div className="flex items-center gap-3 mb-5">
                             <div className="w-12 h-12 bg-gradient-to-br from-[#B54A32] to-[#9a3f2b] rounded-xl flex items-center justify-center text-white shadow-lg shadow-[#B54A32]/30">
                                 <SettingsIcon />
                             </div>
                             <div>
-                                <h3 className="text-xl font-bold text-gray-900">Månedsinterval</h3>
+                                <h3 id="month-dialog-title" className="text-xl font-bold text-gray-900">Månedsinterval</h3>
                                 <p className="text-sm text-gray-500">Indstil perioden for månedlige indberetninger</p>
                             </div>
                         </div>
@@ -1284,8 +1322,9 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Første dag i perioden</label>
+                                    <label htmlFor="month-start-day" className="block text-sm font-semibold text-gray-700 mb-2">Første dag i perioden</label>
                                     <input
+                                        id="month-start-day"
                                         type="number"
                                         min="1"
                                         max="31"
@@ -1295,8 +1334,9 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Sidste dag i perioden</label>
+                                    <label htmlFor="month-end-day" className="block text-sm font-semibold text-gray-700 mb-2">Sidste dag i perioden</label>
                                     <input
+                                        id="month-end-day"
                                         type="number"
                                         min="1"
                                         max="31"
@@ -1306,15 +1346,18 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                     />
                                 </div>
                             </div>
-                            <div className="text-sm text-gray-500">
-                                Eksempel: d. {newMonthInterval.start_day} til d. {newMonthInterval.end_day} i hver måned
+                            <div className={`text-sm ${monthIntervalIsValid ? 'text-gray-500' : 'font-semibold text-rose-700'}`}>
+                                {monthIntervalIsValid
+                                    ? `Periode: d. ${newMonthInterval.start_day} til d. ${newMonthInterval.end_day}`
+                                    : 'Intervallet skal være 1-31 eller sammenhængende, fx 16-15 (startdag højst 28).'}
                             </div>
                         </div>
 
                         <div className="flex gap-3 mt-6">
                             <button
                                 onClick={handleSaveMonthInterval}
-                                className="flex-1 px-5 py-3 btn-kalundborg rounded-xl font-semibold"
+                                disabled={!monthIntervalIsValid}
+                                className="flex-1 px-5 py-3 btn-kalundborg rounded-xl font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 Gem ændring
                             </button>
@@ -1328,15 +1371,13 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                 Annuller
                             </button>
                         </div>
-                    </div>
-                </div>
+                </DialogShell>
             )}
 
             {/* Registreret i løn – dato-modal */}
             {payrollModal.open && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
-                        <h3 className="text-lg font-bold text-gray-900 mb-2">Indberettet manuelt</h3>
+                <DialogShell onClose={() => setPayrollModal({ open: false, entryId: null, payrollDate: new Date().toISOString().slice(0, 10) })} labelledBy="payroll-dialog-title" maxWidth="max-w-sm" panelClassName="p-6">
+                        <h3 id="payroll-dialog-title" className="text-lg font-bold text-gray-900 mb-2">Indberettet manuelt</h3>
                         <p className="text-sm text-gray-500 mb-4">Bekræft manuel indberetning til løn. Nuværende dato og tidspunkt registreres.</p>
                         <div className="flex gap-3">
                             <button onClick={handleMarkPayroll} className="flex-1 px-4 py-3 btn-kalundborg rounded-xl font-medium">
@@ -1349,8 +1390,7 @@ export default function ApprovalPage({ isMobileView = false, userRole = 'admin' 
                                 Annuller
                             </button>
                         </div>
-                    </div>
-                </div>
+                </DialogShell>
             )}
         </div>
     );

@@ -8,8 +8,30 @@ CREATE TABLE IF NOT EXISTS caregivers (
     last_name TEXT NOT NULL,
     ma_number TEXT UNIQUE NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
+);
+
+-- Godkendere. Kernerettighederne overblik og godkend/afvis følger rollen.
+-- Administrative rettigheder ligger separat i approver_permissions.
+CREATE TABLE IF NOT EXISTS approvers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS approver_permissions (
+    approver_id INTEGER NOT NULL,
+    permission TEXT NOT NULL,
+    granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    granted_by TEXT NOT NULL DEFAULT 'System',
+    PRIMARY KEY (approver_id, permission),
+    FOREIGN KEY (approver_id) REFERENCES approvers(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_approver_permissions_approver ON approver_permissions(approver_id);
 
 -- Børn (children)
 CREATE TABLE IF NOT EXISTS children (
@@ -34,7 +56,8 @@ CREATE TABLE IF NOT EXISTS children (
     frame_hours REAL DEFAULT 0,
 
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
 );
 
 -- Relation: Barn <-> Barnepige (many-to-many)
@@ -66,6 +89,12 @@ CREATE TABLE IF NOT EXISTS time_entries (
     sunday_holiday_hours REAL DEFAULT 0,
     total_hours REAL DEFAULT 0,
 
+    -- Version af regelsættet som beregnede timefelterne
+    calculation_version TEXT NOT NULL DEFAULT 'legacy',
+
+    -- Valgt bevillingskilde: 'normal' eller 'frame'
+    grant_source TEXT NOT NULL DEFAULT 'normal' CHECK (grant_source IN ('normal', 'frame')),
+
     -- Kommentar
     comment TEXT,
 
@@ -85,6 +114,18 @@ CREATE TABLE IF NOT EXISTS time_entries (
     FOREIGN KEY (caregiver_id) REFERENCES caregivers(id) ON DELETE CASCADE,
     FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
 );
+
+-- Append-only auditlog for timeregistreringens workflow
+CREATE TABLE IF NOT EXISTS time_entry_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    time_entry_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    metadata TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (time_entry_id) REFERENCES time_entries(id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_time_entry_audit_entry ON time_entry_audit(time_entry_id, created_at);
 
 -- Systemindstillinger (fx månedsinterval)
 CREATE TABLE IF NOT EXISTS settings (
@@ -110,7 +151,10 @@ CREATE TABLE IF NOT EXISTS extra_grants (
     hours REAL NOT NULL,
     from_date DATE NOT NULL,
     to_date DATE NOT NULL,
+    grant_source TEXT NOT NULL DEFAULT 'normal' CHECK (grant_source IN ('normal', 'frame')),
     comment TEXT,
+    granted_by TEXT NOT NULL DEFAULT 'Godkender',
+    granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE

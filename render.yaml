@@ -2,9 +2,16 @@ services:
   - type: web
     name: bp3-barnepige
     runtime: node
-    plan: free
-    buildCommand: npm install && npm run build
+    plan: starter
+    buildCommand: npm ci && npm run build
     startCommand: npm run start
+    healthCheckPath: /api/health
+    disk:
+      name: bp3-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
+      - key: DB_PATH
+        value: /var/data/database.sqlite

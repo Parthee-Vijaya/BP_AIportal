@@ -8,9 +8,11 @@ Webbaseret system til registrering og godkendelse af timer for barnepiger i Kalu
 
 ## Quick Start
 
+Kræver Node.js 22.17.x (se `.nvmrc`).
+
 ```bash
 # Installer dependencies
-npm install
+npm ci
 
 # Start både backend og frontend
 npm run dev
@@ -18,6 +20,9 @@ npm run dev
 # Eller start separat:
 npm run dev:backend   # Backend på http://localhost:3001
 npm run dev:frontend  # Frontend på http://localhost:5173
+
+# Kør backendens domæne- og API-tests
+npm test
 ```
 
 ## Demo Data
@@ -34,7 +39,8 @@ node backend/seed-large.js      # Stort datasæt til performance test
 
 ### 3-rolle system
 
-Systemet understøtter tre brugerroller med forskellig adgang:
+Systemet har tre demo-rollevisninger. Rolle-dropdownen er endnu ikke egentlig
+login eller adgangskontrol og må derfor ikke bruges som sikkerhedsgrænse:
 
 | Rolle | Rettigheder |
 |-------|-------------|
@@ -80,7 +86,7 @@ CRUD-operationer for børn med bevillingsopsætning.
 **Funktioner:**
 - Søgefelt (navn)
 - Bevillingstype pr. barn (uge, måned, kvartal, halvår, år, specifikke ugedage)
-- Rammebevilling som separat tillæg (årlig bevilling der overruler normal)
+- Rammebevilling som en separat årlig pulje, der vælges eksplicit ved registrering
 - Ekstra bevillinger — opret, rediger og slet supplerende bevillinger pr. barn
 - Tilknytning af barnepiger til børn
 - Visning af forbrugt vs. bevilget timer
@@ -167,29 +173,36 @@ Responsivt design med dedikeret mobilvisning.
 
 ## Tillægsregler
 
-Timer fordeles automatisk i kategorier baseret på tidspunkt og ugedag:
+Det fulde, versionsstyrede regelsæt og de åbne forretningsafklaringer findes i
+[`docs/BEREGNINGSREGLER.md`](docs/BEREGNINGSREGLER.md).
+
+Alle arbejdstimer registreres som grundtimer. Tillægstimer beregnes oven i
+grundtimerne og fordeles automatisk efter tidspunkt og ugedag:
 
 ### Hverdage (mandag-fredag)
 | Tid | Kategori |
 |-----|----------|
 | 00:00-06:00 | Nattillæg |
-| 06:01-17:00 | Normaltimer |
-| 17:01-23:00 | Aftentillæg |
+| 06:00-17:00 | Intet tillæg |
+| 17:00-23:00 | Aftentillæg |
 | 23:00-23:59 | Nattillæg |
 
 ### Lørdag
 | Tid | Kategori |
 |-----|----------|
 | 00:00-06:00 | Nattillæg |
-| 06:01-08:00 | Normaltimer |
-| 08:01-23:59 | Lørdagstillæg |
+| 06:00-08:00 | Intet tillæg |
+| 08:00-23:59 | Lørdagstillæg |
 
 ### Søn- og helligdage
 | Tid | Kategori |
 |-----|----------|
 | 00:00-23:59 | Søndags- og helligdagstillæg |
 
-**Helligdage overruler andre dage!** Inkluderer faste helligdage (Nytårsdag, 1. maj, Grundlovsdag, Juleaften, Juledag, 2. juledag, Nytårsaften) og bevægelige helligdage (Skærtorsdag, Langfredag, Påskedag, 2. påskedag, Kr. Himmelfart, Pinsedag, 2. pinsedag). Officielle helligdage hentes fra [Kalendarium.dk API](https://kalendarium.dk/) med faktiske datoer. Brugerdefinerede helligdage kan tilføjes via admin.
+**Beregningshelligdage overruler andre tillæg!** Regelsættet indeholder faste og
+bevægelige datoer. Kalendarium.dk bruges til kalenderoversigten, mens selve
+lønberegningen bruger det versionsstyrede lokale regelsæt. Brugerdefinerede
+helligdage kan tilføjes via admin.
 
 Timer rundes op til nærmeste kvarter. Tidsformat er decimalt (0,25 / 0,50 / 0,75 / 1,00).
 
@@ -203,7 +216,7 @@ Timer rundes op til nærmeste kvarter. Tidsformat er decimalt (0,25 / 0,50 / 0,7
 | **Halvår** | H1 (jan-jun) / H2 (jul-dec) |
 | **År** | 1. jan til 31. dec |
 | **Specifikke ugedage** | Timer pr. valgt ugedag pr. uge |
-| **Rammebevilling** | Årlig bevilling (overruler normal) |
+| **Rammebevilling** | Separat årlig pulje, der vælges ved registrering |
 | **Ekstra bevilling** | Supplerende bevilling med valgfri periode |
 
 Bevillinger er pr. barn, ikke pr. barnepige. Både afventende og godkendte registreringer tæller med i forbruget.
@@ -223,7 +236,7 @@ Administratorer kan konfigurere månedsintervallet for bevillingsperioder:
 - **Backend**: Node.js + Express
 - **Database**: SQLite (better-sqlite3)
 - **Styling**: Kalundborg Kommune branding (#B54A32)
-- **Deployment**: Render.com konfiguration inkluderet
+- **Deployment**: Render.com konfiguration med health check og persistent SQLite-disk
 
 ## API Endpoints
 

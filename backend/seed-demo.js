@@ -1,39 +1,40 @@
 // Demo data script
-import Database from 'better-sqlite3';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import db, { initializeDatabase } from './src/db/database.js';
+import { ALLOWANCE_CALCULATION_VERSION, calculateAllowances } from './src/services/allowanceCalculator.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const db = Database(join(__dirname, 'src/db/database.sqlite'));
+initializeDatabase();
 
 console.log('Opretter demo data...\n');
 
 // Opret barnepiger
 const insertCaregiver = db.prepare(`
-    INSERT OR IGNORE INTO caregivers (first_name, last_name, ma_number)
+    INSERT INTO caregivers (first_name, last_name, ma_number)
     VALUES (?, ?, ?)
 `);
 
 const caregivers = [
-    { first_name: 'Maria', last_name: 'Jensen', ma_number: 'MA-001' },
-    { first_name: 'Sofie', last_name: 'Nielsen', ma_number: 'MA-002' },
-    { first_name: 'Line', last_name: 'Hansen', ma_number: 'MA-003' }
+    { key: 'maria', first_name: 'Maria', last_name: 'Jensen', ma_number: '00000001' },
+    { key: 'sofie', first_name: 'Sofie', last_name: 'Nielsen', ma_number: '00000002' },
+    { key: 'line', first_name: 'Line', last_name: 'Hansen', ma_number: '00000003' }
 ];
 
+const caregiverIds = {};
 caregivers.forEach(cg => {
-    try {
-        insertCaregiver.run(cg.first_name, cg.last_name, cg.ma_number);
-        console.log(`Barnepige oprettet: ${cg.first_name} ${cg.last_name}`);
-    } catch (e) {
+    const existing = db.prepare('SELECT id, ma_number FROM caregivers').all()
+        .find(row => String(row.ma_number).replace(/\D/g, '').padStart(8, '0') === cg.ma_number);
+    if (existing) {
+        caregiverIds[cg.key] = existing.id;
         console.log(`Barnepige findes allerede: ${cg.first_name}`);
+    } else {
+        const result = insertCaregiver.run(cg.first_name, cg.last_name, cg.ma_number);
+        caregiverIds[cg.key] = result.lastInsertRowid;
+        console.log(`Barnepige oprettet: ${cg.first_name} ${cg.last_name}`);
     }
 });
 
 // Opret børn
 const insertChild = db.prepare(`
-    INSERT OR IGNORE INTO children (
+    INSERT INTO children (
         first_name, last_name, birth_date, psp_element,
         grant_type, grant_hours, grant_weekdays, has_frame_grant, frame_hours
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -41,6 +42,7 @@ const insertChild = db.prepare(`
 
 const children = [
     {
+        key: 'emil',
         first_name: 'Emil',
         last_name: 'Pedersen',
         birth_date: '2018-05-15',
@@ -52,6 +54,7 @@ const children = [
         frame_hours: 0
     },
     {
+        key: 'laura',
         first_name: 'Laura',
         last_name: 'Andersen',
         birth_date: '2019-08-22',
@@ -63,6 +66,7 @@ const children = [
         frame_hours: 0
     },
     {
+        key: 'oliver',
         first_name: 'Oliver',
         last_name: 'Christensen',
         birth_date: '2017-03-10',
@@ -82,6 +86,7 @@ const children = [
         frame_hours: 0
     },
     {
+        key: 'ida',
         first_name: 'Ida',
         last_name: 'Larsen',
         birth_date: '2020-01-30',
@@ -94,16 +99,20 @@ const children = [
     }
 ];
 
+const childIds = {};
 children.forEach(child => {
-    try {
-        insertChild.run(
+    const existing = db.prepare('SELECT id FROM children WHERE psp_element = ? ORDER BY id LIMIT 1').get(child.psp_element);
+    if (existing) {
+        childIds[child.key] = existing.id;
+        console.log(`Barn findes allerede: ${child.first_name}`);
+    } else {
+        const result = insertChild.run(
             child.first_name, child.last_name, child.birth_date, child.psp_element,
             child.grant_type, child.grant_hours, child.grant_weekdays,
             child.has_frame_grant, child.frame_hours
         );
+        childIds[child.key] = result.lastInsertRowid;
         console.log(`Barn oprettet: ${child.first_name} ${child.last_name} (${child.grant_type})`);
-    } catch (e) {
-        console.log(`Barn findes allerede: ${child.first_name}`);
     }
 });
 
@@ -114,11 +123,11 @@ const insertLink = db.prepare(`
 `);
 
 const links = [
-    { child: 1, caregiver: 1 },  // Emil -> Maria
-    { child: 1, caregiver: 2 },  // Emil -> Sofie (to barnepiger på samme barn)
-    { child: 2, caregiver: 1 },  // Laura -> Maria
-    { child: 3, caregiver: 2 },  // Oliver -> Sofie
-    { child: 4, caregiver: 3 }   // Ida -> Line
+    { child: childIds.emil, caregiver: caregiverIds.maria },
+    { child: childIds.emil, caregiver: caregiverIds.sofie },
+    { child: childIds.laura, caregiver: caregiverIds.maria },
+    { child: childIds.oliver, caregiver: caregiverIds.sofie },
+    { child: childIds.ida, caregiver: caregiverIds.line }
 ];
 
 links.forEach(link => {
@@ -134,27 +143,27 @@ const insertEntry = db.prepare(`
     INSERT INTO time_entries (
         caregiver_id, child_id, date, start_time, end_time,
         normal_hours, evening_hours, night_hours, saturday_hours, sunday_holiday_hours,
-        total_hours, comment, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_hours, calculation_version, comment, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const entries = [
     // Pending entries
     {
-        caregiver_id: 1, child_id: 1,
+        caregiver_id: caregiverIds.maria, child_id: childIds.emil,
         date: '2026-01-13', start_time: '08:00', end_time: '14:00',
         normal_hours: 6, evening_hours: 0, night_hours: 0, saturday_hours: 0, sunday_holiday_hours: 0,
         total_hours: 6, comment: 'Pasning mens forældre arbejdede', status: 'pending'
     },
     {
-        caregiver_id: 2, child_id: 1,
+        caregiver_id: caregiverIds.sofie, child_id: childIds.emil,
         date: '2026-01-14', start_time: '17:00', end_time: '21:00',
         normal_hours: 0, evening_hours: 4, night_hours: 0, saturday_hours: 0, sunday_holiday_hours: 0,
         total_hours: 4, comment: 'Aften pasning', status: 'pending'
     },
     // Approved entry
     {
-        caregiver_id: 1, child_id: 2,
+        caregiver_id: caregiverIds.maria, child_id: childIds.laura,
         date: '2026-01-10', start_time: '09:00', end_time: '15:00',
         normal_hours: 6, evening_hours: 0, night_hours: 0, saturday_hours: 0, sunday_holiday_hours: 0,
         total_hours: 6, comment: null, status: 'approved'
@@ -163,12 +172,18 @@ const entries = [
 
 entries.forEach(entry => {
     try {
+        const exists = db.prepare(`
+            SELECT id FROM time_entries
+            WHERE caregiver_id = ? AND child_id = ? AND date = ? AND start_time = ? AND end_time = ?
+        `).get(entry.caregiver_id, entry.child_id, entry.date, entry.start_time, entry.end_time);
+        if (exists) return;
+        const allowances = calculateAllowances(entry.date, entry.start_time, entry.end_time);
         insertEntry.run(
             entry.caregiver_id, entry.child_id,
             entry.date, entry.start_time, entry.end_time,
-            entry.normal_hours, entry.evening_hours, entry.night_hours,
-            entry.saturday_hours, entry.sunday_holiday_hours,
-            entry.total_hours, entry.comment, entry.status
+            allowances.normal_hours, allowances.evening_hours, allowances.night_hours,
+            allowances.saturday_hours, allowances.sunday_holiday_hours,
+            allowances.total_hours, ALLOWANCE_CALCULATION_VERSION, entry.comment, entry.status
         );
     } catch (e) {
         console.error('Fejl ved entry:', e.message);

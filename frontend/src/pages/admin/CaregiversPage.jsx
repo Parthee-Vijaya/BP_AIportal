@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { caregiversApi, childrenApi } from '../../utils/api';
 import { padMaNumber } from '../../utils/helpers';
+import DialogShell from '../../components/DialogShell';
 
 const PlusIcon = () => (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -82,7 +83,7 @@ export default function CaregiversPage({ readOnly = false }) {
         setFormData({
             first_name: caregiver.first_name,
             last_name: caregiver.last_name,
-            ma_number: caregiver.ma_number,
+            ma_number: padMaNumber(caregiver.ma_number),
             child_ids: caregiver.children?.map(c => c.id) || []
         });
         setMaError('');
@@ -115,7 +116,7 @@ export default function CaregiversPage({ readOnly = false }) {
         if (!searchQuery) return true;
         const query = searchQuery.toLowerCase();
         const fullName = `${cg.first_name} ${cg.last_name}`.toLowerCase();
-        const maNumber = (cg.ma_number || '').toLowerCase();
+        const maNumber = padMaNumber(cg.ma_number || '').toLowerCase();
         return fullName.includes(query) || maNumber.includes(query);
     });
 
@@ -131,14 +132,16 @@ export default function CaregiversPage({ readOnly = false }) {
     return (
         <div className="space-y-4">
             {/* Header */}
-            <div className="bg-white rounded-xl px-4 py-2.5 shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-base font-bold text-gray-900">Barnepiger</h2>
+            <div className="page-heading mb-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="eyebrow">Administration</div>
+                        <h1>Barnepiger</h1>
+                        <p>Administrér tilknytninger og stamdata.</p>
                         <span className="text-xs text-gray-400">{filteredCaregivers.length} barnepiger</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="relative">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="relative mobile-full">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
                                 <SearchIcon />
                             </div>
@@ -147,13 +150,14 @@ export default function CaregiversPage({ readOnly = false }) {
                                 placeholder="Søg navn eller MA-nr..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 pr-4 py-1.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#B54A32]/20 focus:border-[#B54A32]/30 transition-all w-56"
+                                aria-label="Søg efter barnepige med navn eller MA-nummer"
+                                className="mobile-full min-h-11 w-64 rounded-lg border border-slate-400 bg-white py-2 pl-9 pr-4 text-sm"
                             />
                         </div>
                         {!readOnly && (
                             <button
                                 onClick={openCreateModal}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#B54A32] to-[#9a3f2b] text-white rounded-lg text-xs font-medium shadow-md hover:shadow-lg transition-all"
+                                className="btn-kalundborg mobile-full gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold"
                             >
                                 <PlusIcon />
                                 Opret barnepige
@@ -169,8 +173,8 @@ export default function CaregiversPage({ readOnly = false }) {
                     <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-[#B54A32]"></div>
                 </div>
             ) : (
-                <div className="bg-white rounded-xl overflow-clip shadow-sm border border-gray-200">
-                    <table className="w-full">
+                <div className="surface overflow-clip rounded-lg">
+                    <table className="responsive-table">
                         <thead>
                             <tr className="sticky top-[124px] z-10">
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50 border-b border-gray-200">Navn</th>
@@ -182,27 +186,27 @@ export default function CaregiversPage({ readOnly = false }) {
                         <tbody className="divide-y divide-gray-100">
                             {filteredCaregivers.map((caregiver) => (
                                 <tr key={caregiver.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-4 py-3">
+                                    <td data-label="Navn" className="px-4 py-3">
                                         <span className="font-medium text-sm text-gray-900">{caregiver.first_name} {caregiver.last_name}</span>
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td data-label="MA-nummer" className="px-4 py-3">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium bg-gray-100 text-gray-600 border border-gray-200">
                                             {padMaNumber(caregiver.ma_number || '')}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                    <td data-label="Tilknyttede børn" className="px-4 py-3 text-sm text-gray-600">
                                         {caregiver.children?.length > 0
                                             ? caregiver.children.map(c => c.name).join(', ')
                                             : <span className="text-gray-400 italic">Ingen tilknyttet</span>
                                         }
                                     </td>
                                     {!readOnly && (
-                                        <td className="px-4 py-3 text-right">
+                                        <td data-label="Handlinger" className="px-4 py-3 text-right">
                                             <div className="inline-flex items-center gap-1">
-                                                <button onClick={() => openEditModal(caregiver)} className="p-1.5 text-gray-400 hover:text-[#B54A32] hover:bg-gray-100 rounded-lg transition-all" title="Rediger">
+                                                <button onClick={() => openEditModal(caregiver)} className="min-h-10 min-w-10 p-2 text-gray-500 hover:text-[#B54A32] hover:bg-gray-100 rounded-lg transition-all" aria-label={`Rediger ${caregiver.first_name} ${caregiver.last_name}`}>
                                                     <EditIcon />
                                                 </button>
-                                                <button onClick={() => handleDelete(caregiver.id)} className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Slet">
+                                                <button onClick={() => handleDelete(caregiver.id)} className="min-h-10 min-w-10 p-2 text-gray-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" aria-label={`Arkivér ${caregiver.first_name} ${caregiver.last_name}`}>
                                                     <TrashIcon />
                                                 </button>
                                             </div>
@@ -231,37 +235,37 @@ export default function CaregiversPage({ readOnly = false }) {
 
             {/* Edit/Create Modal */}
             {editModal.open && (
-                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-md border border-gray-200">
+                <DialogShell onClose={() => setEditModal({ open: false, caregiver: null })} labelledBy="caregiver-dialog-title" maxWidth="max-w-md">
                         <div className="flex items-center justify-between mb-5">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-gradient-to-br from-violet-400 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-violet-500/30">
                                     <UsersIcon />
                                 </div>
-                                <h3 className="text-lg font-bold text-gray-900">
+                                <h3 id="caregiver-dialog-title" className="text-lg font-bold text-gray-900">
                                     {editModal.caregiver ? 'Rediger barnepige' : 'Opret barnepige'}
                                 </h3>
                             </div>
-                            <button onClick={() => setEditModal({ open: false, caregiver: null })} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all">
+                            <button type="button" aria-label="Luk dialog" onClick={() => setEditModal({ open: false, caregiver: null })} className="min-h-11 min-w-11 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all">
                                 <CloseIcon />
                             </button>
                         </div>
 
                         <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Fornavn *</label>
-                                    <input type="text" value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} className="w-full rounded-lg px-3 py-2 text-sm border border-gray-300 focus:ring-2 focus:ring-[#B54A32]/20 focus:border-[#B54A32]/30" />
+                                    <label htmlFor="caregiver-first-name" className="block text-xs font-semibold text-gray-700 mb-1">Fornavn *</label>
+                                    <input id="caregiver-first-name" required type="text" value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} className="glass-input w-full rounded-lg px-3 py-2 text-sm" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Efternavn *</label>
-                                    <input type="text" value={formData.last_name} onChange={(e) => setFormData({ ...formData, last_name: e.target.value })} className="w-full rounded-lg px-3 py-2 text-sm border border-gray-300 focus:ring-2 focus:ring-[#B54A32]/20 focus:border-[#B54A32]/30" />
+                                    <label htmlFor="caregiver-last-name" className="block text-xs font-semibold text-gray-700 mb-1">Efternavn *</label>
+                                    <input id="caregiver-last-name" required type="text" value={formData.last_name} onChange={(e) => setFormData({ ...formData, last_name: e.target.value })} className="glass-input w-full rounded-lg px-3 py-2 text-sm" />
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">MA-nummer * (8 cifre)</label>
+                                <label htmlFor="caregiver-ma" className="block text-xs font-semibold text-gray-700 mb-1">MA-nummer * (8 cifre)</label>
                                 <input
+                                    id="caregiver-ma"
                                     type="text" inputMode="numeric" pattern="[0-9]*"
                                     value={formData.ma_number}
                                     onChange={(e) => {
@@ -277,7 +281,7 @@ export default function CaregiversPage({ readOnly = false }) {
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">Tilknyt børn</label>
+                                <p className="block text-xs font-semibold text-gray-700 mb-1">Tilknyt børn · {formData.child_ids?.length || 0} valgt</p>
                                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                                     <div className="p-2 bg-gray-50 border-b border-gray-200">
                                         <input type="text" placeholder="Søg barn..." value={childSearch} onChange={(e) => setChildSearch(e.target.value)} className="w-full rounded-md px-2.5 py-1.5 text-sm border border-gray-300 focus:ring-2 focus:ring-[#B54A32]/20" />
@@ -302,8 +306,7 @@ export default function CaregiversPage({ readOnly = false }) {
                             <button onClick={handleSave} className="flex-1 px-4 py-2.5 bg-gradient-to-r from-[#B54A32] to-[#9a3f2b] text-white rounded-lg font-semibold text-sm shadow-md hover:shadow-lg transition-all">Gem</button>
                             <button onClick={() => setEditModal({ open: false, caregiver: null })} className="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold text-sm transition-all">Annuller</button>
                         </div>
-                    </div>
-                </div>
+                </DialogShell>
             )}
         </div>
     );

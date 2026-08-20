@@ -1,16 +1,13 @@
 // Extended demo data script med flere barnepiger, børn og realistiske timeregistreringer
-import Database from 'better-sqlite3';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import db, { initializeDatabase } from './src/db/database.js';
+import { ALLOWANCE_CALCULATION_VERSION, calculateAllowances } from './src/services/allowanceCalculator.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const db = Database(join(__dirname, 'src/db/database.sqlite'));
+initializeDatabase();
 
 console.log('Opretter udvidet demo data...\n');
 
 // Ryd eksisterende data
+db.exec('DELETE FROM time_entry_audit');
 db.exec('DELETE FROM time_entries');
 db.exec('DELETE FROM child_caregiver');
 db.exec('DELETE FROM children');
@@ -20,6 +17,7 @@ db.exec('DELETE FROM caregivers');
 db.exec("DELETE FROM sqlite_sequence WHERE name='caregivers'");
 db.exec("DELETE FROM sqlite_sequence WHERE name='children'");
 db.exec("DELETE FROM sqlite_sequence WHERE name='time_entries'");
+db.exec("DELETE FROM sqlite_sequence WHERE name='time_entry_audit'");
 
 console.log('Eksisterende data ryddet\n');
 
@@ -30,16 +28,16 @@ const insertCaregiver = db.prepare(`
 `);
 
 const caregivers = [
-    { first_name: 'Maria', last_name: 'Jensen', ma_number: 'MA-001' },
-    { first_name: 'Sofie', last_name: 'Nielsen', ma_number: 'MA-002' },
-    { first_name: 'Line', last_name: 'Hansen', ma_number: 'MA-003' },
-    { first_name: 'Emma', last_name: 'Pedersen', ma_number: 'MA-004' },
-    { first_name: 'Laura', last_name: 'Andersen', ma_number: 'MA-005' },
-    { first_name: 'Freja', last_name: 'Christensen', ma_number: 'MA-006' },
-    { first_name: 'Ida', last_name: 'Larsen', ma_number: 'MA-007' },
-    { first_name: 'Clara', last_name: 'Sørensen', ma_number: 'MA-008' },
-    { first_name: 'Maja', last_name: 'Rasmussen', ma_number: 'MA-009' },
-    { first_name: 'Anna', last_name: 'Jørgensen', ma_number: 'MA-010' }
+    { first_name: 'Maria', last_name: 'Jensen', ma_number: '00000001' },
+    { first_name: 'Sofie', last_name: 'Nielsen', ma_number: '00000002' },
+    { first_name: 'Line', last_name: 'Hansen', ma_number: '00000003' },
+    { first_name: 'Emma', last_name: 'Pedersen', ma_number: '00000004' },
+    { first_name: 'Laura', last_name: 'Andersen', ma_number: '00000005' },
+    { first_name: 'Freja', last_name: 'Christensen', ma_number: '00000006' },
+    { first_name: 'Ida', last_name: 'Larsen', ma_number: '00000007' },
+    { first_name: 'Clara', last_name: 'Sørensen', ma_number: '00000008' },
+    { first_name: 'Maja', last_name: 'Rasmussen', ma_number: '00000009' },
+    { first_name: 'Anna', last_name: 'Jørgensen', ma_number: '00000010' }
 ];
 
 caregivers.forEach(cg => {
@@ -207,8 +205,8 @@ const insertEntry = db.prepare(`
     INSERT INTO time_entries (
         caregiver_id, child_id, date, start_time, end_time,
         normal_hours, evening_hours, night_hours, saturday_hours, sunday_holiday_hours,
-        total_hours, comment, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_hours, calculation_version, comment, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 // Hjælpefunktion til at få dato i denne uge
@@ -427,12 +425,13 @@ const entries = [
 let entryCount = 0;
 entries.forEach(entry => {
     try {
+        const allowances = calculateAllowances(entry.date, entry.start_time, entry.end_time);
         insertEntry.run(
             entry.caregiver_id, entry.child_id,
             entry.date, entry.start_time, entry.end_time,
-            entry.normal_hours, entry.evening_hours, entry.night_hours,
-            entry.saturday_hours, entry.sunday_holiday_hours,
-            entry.total_hours, entry.comment, entry.status
+            allowances.normal_hours, allowances.evening_hours, allowances.night_hours,
+            allowances.saturday_hours, allowances.sunday_holiday_hours,
+            allowances.total_hours, ALLOWANCE_CALCULATION_VERSION, entry.comment, entry.status
         );
         entryCount++;
     } catch (e) {
