@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 import { existsSync } from 'fs';
 import { initializeDatabase } from './db/database.js';
-import { authEnabled, requirePortalUser } from './services/portalAuth.js';
+import { authEnabled, entraRolesConfigured, requirePortalUser, resolveEntraRoles } from './services/portalAuth.js';
 import childrenRouter from './routes/children.js';
 import caregiversRouter from './routes/caregivers.js';
 import timeEntriesRouter from './routes/timeEntries.js';
@@ -61,6 +61,18 @@ app.use('/api', requirePortalUser);
 console.log(authEnabled
     ? 'Portal-login: aktiveret (shield-session valideres mod Entra ID)'
     : 'Portal-login: SLÅET FRA (ENTRA_TENANT_ID/ENTRA_CLIENT_ID er ikke sat)');
+
+// Hvem er logget ind (til demo-rolleskærmen og debugging): identitet fra
+// portalens id_token + hvilke af de fire Barnepige-Entra-roller brugeren har
+// (null pr. rolle indtil gruppernes id'er er konfigureret).
+app.get('/api/me', (req, res) => {
+    res.json({
+        ...req.portalUser,
+        authEnabled,
+        rolesConfigured: entraRolesConfigured,
+        entraRoles: resolveEntraRoles(req.portalUser.groups)
+    });
+});
 
 // API Routes
 app.use('/api/children', childrenRouter);

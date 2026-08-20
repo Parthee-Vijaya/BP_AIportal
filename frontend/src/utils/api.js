@@ -62,6 +62,11 @@ async function downloadApi(endpoint) {
     return filename;
 }
 
+// Hvem er logget ind (portal-identitet + Entra-roller)
+export const meApi = {
+    get: () => fetchApi('/me')
+};
+
 // Children API
 export const childrenApi = {
     getAll: () => fetchApi('/children'),

@@ -18,6 +18,28 @@ const audiences = [
 const cookieName = process.env.SHIELD_SESSION_COOKIE || 'shield-session';
 const requiredGroup = process.env.BARNEPIGE_ENTRA_GROUP || '';
 
+// De fire AD/Entra-grupper der kommer til at styre appens roller
+// ("Digitaliseringsportalen Barnepige timeregistrering - ..."). Sæt gruppernes
+// object-id'er når de er oprettet; indtil da svarer resolveEntraRoles null
+// for hver rolle, og frontendens demo-rolleskærm bruges i stedet.
+const roleGroups = Object.freeze({
+    access: process.env.BARNEPIGE_GROUP_ACCESS || '',
+    bruger: process.env.BARNEPIGE_GROUP_BRUGER || '',
+    godkender: process.env.BARNEPIGE_GROUP_GODKENDER || '',
+    administrator: process.env.BARNEPIGE_GROUP_ADMINISTRATOR || ''
+});
+
+export const entraRolesConfigured = Object.values(roleGroups).some(Boolean);
+
+// true/false pr. rolle når gruppens id er konfigureret, ellers null (= ukendt).
+export function resolveEntraRoles(groups = []) {
+    const roles = {};
+    for (const [key, groupId] of Object.entries(roleGroups)) {
+        roles[key] = groupId ? groups.includes(groupId) : null;
+    }
+    return roles;
+}
+
 export const authEnabled = Boolean(tenantId && audiences.length);
 
 // Azure AD udsteder både v1- og v2-formede tokens — accepter begge issuers.
@@ -54,7 +76,10 @@ function claimsToUser(claims) {
         upn: claims.preferred_username || claims.upn || 'unknown',
         name: claims.name || null,
         oid: claims.oid || null,
-        groups: Array.isArray(claims.groups) ? claims.groups : []
+        groups: Array.isArray(claims.groups) ? claims.groups : [],
+        // Entra udelader groups-claimet ved for mange medlemskaber ("overage")
+        // og sætter en henvisning i _claim_names i stedet — vis det til debug.
+        groupOverage: Boolean(claims._claim_names && claims._claim_names.groups)
     };
 }
 
@@ -66,7 +91,8 @@ export async function requirePortalUser(req, res, next) {
             upn: 'dev@localhost',
             name: 'Udvikling (login slået fra)',
             oid: null,
-            groups: []
+            groups: [],
+            groupOverage: false
         };
         return next();
     }

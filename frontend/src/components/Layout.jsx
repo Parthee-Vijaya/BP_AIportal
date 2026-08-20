@@ -51,7 +51,7 @@ const ADMIN_NAV = [
 const ROLE_LABELS = { approver: 'Godkender', administrator: 'Administrator', caregiver: 'Barnepige' };
 const HOME_PATHS = { approver: '/godkender/overblik', administrator: '/administrator/overblik', caregiver: '/barnepige' };
 
-export default function Layout({ children, userRole, onRoleChange, approvers = [], approver, onApproverChange }) {
+export default function Layout({ children, userRole, onRoleChange, approvers = [], approver, onApproverChange, availableRoles = ['approver', 'administrator', 'caregiver'], me, onOpenRolePicker }) {
     const location = useLocation();
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
@@ -117,12 +117,26 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
                             {Icons.user}
                             <span>{ROLE_LABELS[userRole]}{isStaff && approver?.name ? ` · ${approver.name}` : ''}</span>
                         </div>
-                        <label className="sr-only" htmlFor="role-switcher">Vis demo som</label>
-                        <select id="role-switcher" value={userRole} onChange={event => changeRole(event.target.value)} className="header-select max-w-[150px]">
-                            <option value="approver">Godkender</option>
-                            <option value="administrator">Administrator</option>
-                            <option value="caregiver">Barnepige</option>
-                        </select>
+                        {availableRoles.length > 1 && (
+                            <>
+                                <label className="sr-only" htmlFor="role-switcher">Skift visning</label>
+                                <select id="role-switcher" value={userRole} onChange={event => changeRole(event.target.value)} className="header-select max-w-[150px]">
+                                    {availableRoles.map(role => (
+                                        <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+                                    ))}
+                                </select>
+                            </>
+                        )}
+                        {onOpenRolePicker && (
+                            <button
+                                type="button"
+                                onClick={onOpenRolePicker}
+                                className="header-select shrink-0 cursor-pointer"
+                                title={me?.name ? `Logget ind som ${me.name} (${me.upn}) — skift demo-roller` : 'Skift demo-roller'}
+                            >
+                                Demo-roller
+                            </button>
+                        )}
                         {isStaff && approvers.length > 0 && (
                             <>
                                 <label className="sr-only" htmlFor="approver-switcher">Valgt profil</label>
@@ -150,6 +164,12 @@ export default function Layout({ children, userRole, onRoleChange, approvers = [
                         {[...navItems, ...(isStaff ? adminItems : [])].map(([path, label, navIcon]) => (
                             <Link key={path} to={path} className={`mobile-menu-link ${isActive(path) ? 'is-active' : ''}`}>{navIcon}{label}</Link>
                         ))}
+                        {onOpenRolePicker && (
+                            <button type="button" onClick={onOpenRolePicker} className="mobile-menu-link w-full text-left">
+                                {Icons.user}
+                                <span>Skift demo-roller{me?.name ? ` · ${me.name}` : ''}</span>
+                            </button>
+                        )}
                     </nav>
                 )}
             </header>

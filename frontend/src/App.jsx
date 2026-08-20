@@ -12,8 +12,11 @@ import ReportsPage from './pages/admin/ReportsPage';
 import CaregiverDashboard from './pages/caregiver/CaregiverDashboard';
 import RegisterTime from './pages/caregiver/RegisterTime';
 import MyTimeEntries from './pages/caregiver/MyTimeEntries';
-import { approversApi } from './utils/api';
+import DemoRoleScreen from './components/DemoRoleScreen';
+import { NoAccessScreen, NoRolesScreen } from './components/AccessScreens';
+import { approversApi, meApi } from './utils/api';
 import { hasPermission } from './utils/permissions';
+import { ALL_ROLE_KEYS, loadDemoRoles, saveDemoRoles, viewsForRoles } from './utils/demoRoles';
 
 function roleFromPath(pathname) {
     if (pathname.startsWith('/barnepige')) return 'caregiver';
@@ -32,6 +35,10 @@ export default function App() {
     const [userRole, setUserRole] = useState(() => roleFromPath(location.pathname));
     const [approvers, setApprovers] = useState([]);
     const [approverId, setApproverId] = useState(() => Number(localStorage.getItem('demoApproverId')) || null);
+    // me: undefined = henter, null = kunne ikke hentes, ellers portal-identiteten
+    const [me, setMe] = useState(undefined);
+    const [demoRoles, setDemoRoles] = useState(() => loadDemoRoles());
+    const [rolePickerOpen, setRolePickerOpen] = useState(false);
     const caregiverId = 1;
 
     async function loadApprovers() {
@@ -40,6 +47,7 @@ export default function App() {
     }
 
     useEffect(() => { loadApprovers().catch(console.error); }, []);
+    useEffect(() => { meApi.get().then(setMe).catch(() => setMe(null)); }, []);
 
     useEffect(() => {
         const routeRole = roleFromPath(location.pathname);
@@ -71,6 +79,34 @@ export default function App() {
         <PermissionRoute allowed={can(permission)}>{component}</PermissionRoute>
     );
 
+    // Demo-roller: indtil de rigtige AD/Entra-grupper findes, styrer valget på
+    // demo-rolleskærmen hvilke visninger appen tilbyder.
+    const roleKeys = demoRoles || [];
+    const availableViews = viewsForRoles(roleKeys);
+
+    if (rolePickerOpen || demoRoles === null) {
+        return (
+            <DemoRoleScreen
+                me={me}
+                initialRoles={demoRoles ?? ALL_ROLE_KEYS}
+                onContinue={roles => {
+                    saveDemoRoles(roles);
+                    setDemoRoles(roles);
+                    setRolePickerOpen(false);
+                }}
+            />
+        );
+    }
+    if (!roleKeys.includes('access')) {
+        return <NoAccessScreen onOpenRolePicker={() => setRolePickerOpen(true)} />;
+    }
+    if (availableViews.length === 0) {
+        return <NoRolesScreen onOpenRolePicker={() => setRolePickerOpen(true)} />;
+    }
+    if (!availableViews.includes(roleFromPath(location.pathname))) {
+        return <Navigate to={HOME_PATHS[availableViews[0]]} replace />;
+    }
+
     return (
         <Layout
             userRole={userRole}
@@ -78,6 +114,9 @@ export default function App() {
             approvers={visibleApprovers}
             approver={approver}
             onApproverChange={changeApprover}
+            availableRoles={availableViews}
+            me={me}
+            onOpenRolePicker={() => setRolePickerOpen(true)}
         >
             <Routes>
                 <Route path="/" element={<Navigate to={HOME_PATHS[userRole]} replace />} />

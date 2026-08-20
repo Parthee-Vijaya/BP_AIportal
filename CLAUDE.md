@@ -92,3 +92,15 @@ Traefik strips the prefix, so the container always sees clean `/` + `/api` paths
   Entra login (`/api/auth/entra/start?returnTo=…`) and returns to the same page.
 - **Iframe**: `X-Frame-Options` is `SAMEORIGIN` (the portal embeds the app from
   the same origin) — don't change it back to `DENY`.
+- **Roles / demo role screen**: four AD/Entra groups will govern the app
+  ("Digitaliseringsportalen Barnepige timeregistrering - adgang til app /
+  Brugere / Administrator / Godkender"). Until they exist, an interim demo
+  screen (`components/DemoRoleScreen.jsx`, state in `utils/demoRoles.js`,
+  localStorage `bpDemoEntraRoles`) lets each tester pick any combination;
+  the choice gates which views (`/barnepige`, `/godkender`, `/administrator`)
+  the app offers, incl. "no access" / "no roles" states (`AccessScreens.jsx`).
+  `GET /api/me` returns the signed-in identity + `entraRoles` resolved from
+  the `BARNEPIGE_GROUP_ACCESS/_BRUGER/_GODKENDER/_ADMINISTRATOR` env vars
+  (group object-ids; all empty until the groups are created). When the groups
+  arrive: set the four env vars and switch the frontend from demo picks to
+  `me.entraRoles`.
